@@ -4,7 +4,7 @@ from app.database import Base, engine
 
 # Importing models registers your tables on Base.metadata. WITHOUT this import,
 # SQLAlchemy would not know the "files" table exists, and create_all would make
-# nothing. (Common beginner gotcha: "why wasn't my table created?")
+# nothing.
 from app import models  # noqa: F401
 
 # Create any missing tables at startup. This is fine for development. For real

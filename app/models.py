@@ -1,26 +1,21 @@
-from sqlalchemy import BigInteger, Column, DateTime, Integer, String, UniqueConstraint
-from sqlalchemy.sql import func
+from datetime import datetime, timezone
+
+from sqlalchemy import BigInteger, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
-# TODO (you): define the File model here, matching the schema we agreed on.
-#
-#   __tablename__ = "files"
-#
-#   id            integer, primary key, auto-increment
-#   name          string, not null        -> original filename WITHOUT extension
-#   extension     string, nullable        -> e.g. "jpg"; null/"unidentified" if unknown
-#   content_type  string                  -> MIME type, set at upload
-#   size          BigInteger, not null    -> size in bytes
-#   uploaded_at   datetime, not null      -> let the DB set it: server_default=func.now()
-#   path          string, not null        -> relative key / generated filename on disk
-#
-#   UNIQUE (name, extension)  ->  __table_args__ = (UniqueConstraint("name", "extension"),)
-#
-# Syntax reminders (from your SQLAlchemy work):
-#   Column(Integer, primary_key=True)                 # auto-incrementing PK
-#   Column(String, nullable=False)                    # NOT NULL
-#   Column(DateTime, nullable=False, server_default=func.now())
-#
-# Write the class below, then follow the verification steps I gave you.
+class File(Base):
+    __tablename__ = "files"
+    __table_args__ = (
+        UniqueConstraint("name", "extension", name="uq_file_name_extension"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    extension: Mapped[str | None] = mapped_column(String(30))
+    content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    path: Mapped[str] = mapped_column(String(500), nullable=False)  
