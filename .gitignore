@@ -1,2 +1,12 @@
 /.venv
 /.vibe-wise
+
+# Python
+__pycache__/
+*.pyc
+
+# Database
+*.db
+
+# Uploaded files
+/storage
