@@ -1,6 +1,7 @@
 import os, mimetypes, uuid, shutil
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Request
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -25,7 +26,7 @@ async def upload_file(
     db: Session = Depends(get_db),
 ):
     disk_free_space = shutil.disk_usage(STORAGE_DIR).free
-    current_storage_size = db.query(func.sum(models.File.size)).scalar() or 0
+    current_storage_size = db.scalar(select(func.sum(models.File))) or 0
 
     available_space = min(disk_free_space, STORAGE_LIMIT - current_storage_size)
 
@@ -93,6 +94,35 @@ async def upload_file(
 
     db.refresh(file)
     return file
+
+@router.get("/{file_id}/download", response_class=FileResponse, status_code=status.HTTP_200_OK)
+async def download_file(
+    file_id: int,
+    db: Session = Depends(get_db)
+):
+    file = db.scalars(select(models.File).where(models.File.id == file_id)).first()
+    
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    filepath = os.path.join(STORAGE_DIR, file.path)
+    if not os.path.exists(filepath):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="File missing on disk"
+        )
+
+    filename = f"{file.name}.{file.extension}" if file.extension else file.name
+
+    return FileResponse(
+        path=filepath,
+        filename=filename,
+        media_type=file.content_type
+    )
+    
 
 @router.get("", response_model=list[schemas.FileOut], status_code=status.HTTP_200_OK)
 async def list_files(
