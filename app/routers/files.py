@@ -123,9 +123,32 @@ async def download_file(
         media_type=file.content_type
     )
     
-
 @router.get("", response_model=list[schemas.FileOut], status_code=status.HTTP_200_OK)
 async def list_files(
     db: Session = Depends(get_db)
 ):
     return db.scalars(select(models.File)).all()
+
+@router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_file(
+    file_id: int,
+    db: Session = Depends(get_db)
+):
+    file = db.scalars(select(models.File).where(models.File.id == file_id)).first()
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    db.delete(file)
+    db.commit()
+
+    try:
+        filepath = os.path.join(STORAGE_DIR, file.path)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    except Exception:
+        pass
+    finally:
+        return
