@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FileOut(BaseModel):
@@ -16,3 +16,12 @@ class FileOut(BaseModel):
     content_type: str
     size: int
     uploaded_at: datetime
+
+class PasswordIn(BaseModel):
+    password: str = Field(min_length=8)
+
+class TokenOut(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    

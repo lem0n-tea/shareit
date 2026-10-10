@@ -18,4 +18,10 @@ class File(Base):
     content_type: Mapped[str] = mapped_column(String(255), nullable=False)
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    path: Mapped[str] = mapped_column(String(500), nullable=False)  
+    path: Mapped[str] = mapped_column(String(500), nullable=False) 
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    password_hash: Mapped[str] = mapped_column(String(60), nullable=False) 

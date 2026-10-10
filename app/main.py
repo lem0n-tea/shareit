@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.database import Base, engine
-from app.routers import files
+from app.routers import files, auth
 
 # Importing models registers your tables on Base.metadata. WITHOUT this import,
 # SQLAlchemy would not know the "files" table exists, and create_all would make
@@ -17,6 +17,8 @@ app = FastAPI(title="Shareit")
 
 # Mount the files router. Its routes live under the prefix it declares ("/files").
 app.include_router(files.router)
+
+app.include_router(auth.router)
 
 
 @app.get("/health")

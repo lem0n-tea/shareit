@@ -4,3 +4,5 @@ sqlalchemy
 python-multipart
 pydantic-settings
 python-dotenv
+bcrypt
+pyjwt
