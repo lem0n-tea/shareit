@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
+from app.security import get_current_user
 from app.config import settings
 
-router = APIRouter(prefix="/files", tags=["files"])
+router = APIRouter(prefix="/files", tags=["files"], dependencies=[Depends(get_current_user)])
 
 # Where uploaded bytes live on disk: a configured, relative directory. 
 # Created at import time so it always exists.

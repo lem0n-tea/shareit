@@ -1,11 +1,18 @@
 import bcrypt
 import jwt
-
 from datetime import datetime, timedelta, timezone
 
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app import models
+from app.database import get_db
 from app.config import settings
 
+
+bearer_scheme = HTTPBearer()
 
 def hash_password(password: str) -> str:
     password_bytes = password.encode()
@@ -44,3 +51,42 @@ def decode_token(token: str) -> dict:
         key=settings.secret_key,
         algorithms=[settings.algorithm,]
     )
+
+async def get_current_user(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+) -> models.User:
+    token = creds.credentials
+
+    try:
+        payload = decode_token(token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Wrong credentials"
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Wrong credentials"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Auth failed"
+        ) from e
+
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Wrong credentials"
+        )
+
+    user = db.scalars(select(models.User).where(models.User.id == int(payload.get("sub")))).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Wrong credentials"
+        )
+    
+    return user
