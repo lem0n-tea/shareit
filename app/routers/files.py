@@ -27,7 +27,7 @@ async def upload_file(
     db: Session = Depends(get_db),
 ):
     disk_free_space = shutil.disk_usage(STORAGE_DIR).free
-    current_storage_size = db.scalar(select(func.sum(models.File))) or 0
+    current_storage_size = db.scalar(select(func.sum(models.File.size))) or 0
 
     available_space = min(disk_free_space, STORAGE_LIMIT - current_storage_size)
 

@@ -11,5 +11,7 @@ __pycache__/
 # Uploaded files
 /storage
 
+/data
+
 # Environment
 .env

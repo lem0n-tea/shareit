@@ -2,8 +2,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    storage_dir: str = "./storage"
+    storage_dir: str = "./data/storage"
     storage_limit: int | None = None
+
+    database_url: str = "sqlite:///./data/shareit.db"
 
     secret_key: str
     algorithm: str = "HS256"

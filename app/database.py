@@ -3,11 +3,13 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from app.config import settings
+
 # The ONE place the database engine is chosen. This is what makes the future
 # SQLite -> PostgreSQL swap a single-line change: later you set DATABASE_URL to
 # something like "postgresql+psycopg2://user:password@host/dbname" and nothing
 # else in the app needs to know.
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./shareit.db")
+DATABASE_URL = settings.database_url
 
 # SQLite-only wrinkle: by default SQLite refuses to be used from more than one
 # thread, but FastAPI serves requests from a threadpool. This arg relaxes that.

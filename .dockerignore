@@ -1,0 +1,16 @@
+/.venv
+/.vibe-wise
+.git
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Database
+*.db
+
+# Uploaded files
+/storage
+
+/data
