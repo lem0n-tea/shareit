@@ -1,0 +1,12 @@
+nikva.duckdns.org {
+	# Forward all requests to the app container over the internal Docker network.
+	# "app" is the compose service name, which resolves to that container.
+	reverse_proxy app:8000
+
+	# Edge guard: reject any request whose body exceeds this, before it reaches the
+	# app. This is the coarse infrastructure limit (DoS / early reject) -- it does NOT
+	# replace the app's per-user quota + disk checks, it complements them.
+	request_body {
+		max_size 100MB
+	}
+}
