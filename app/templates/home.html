@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Your files — Shareit{% endblock %}
+{% block content %}
+<header>
+  <h1>Shareit</h1>
+  <a href="/logout">Log out</a>
+</header>
+<main>
+  {% if files %}
+  <table id="files">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Size</th>
+        <th>Uploaded</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for file in files %}
+      <tr>
+        <td>{{ file.name }}{% if file.extension %}.{{ file.extension }}{% endif %}</td>
+        <td>{{ file.extension or "—" }}</td>
+        <td data-size="{{ file.size }}">{{ file.size | filesizeformat }}</td>
+        <td data-ts="{{ file.uploaded_at.isoformat() }}">{{ file.uploaded_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><a href="/files/{{ file.id }}/download">Download</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No files yet.</p>
+  {% endif %}
+</main>
+
+<script>
+  // Minimal client-side column sort. Clicking a header reorders the already-loaded
+  // rows -- no server round-trip. Numeric columns use data-size (bytes) and dates use
+  // data-ts (ISO string, which sorts chronologically), so they sort correctly rather
+  // than as display text.
+  document.querySelectorAll('#files thead th').forEach((th, idx) => {
+    if (idx >= 4) return;            // skip the Download column
+    let asc = true;
+    th.addEventListener('click', () => {
+      const tbody = document.querySelector('#files tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort((a, b) => {
+        const ca = a.children[idx], cb = b.children[idx];
+        const numeric = ca.dataset.size !== undefined;
+        let va = ca.dataset.size ?? ca.dataset.ts ?? ca.textContent.trim().toLowerCase();
+        let vb = cb.dataset.size ?? cb.dataset.ts ?? cb.textContent.trim().toLowerCase();
+        if (numeric) { va = +va; vb = +vb; }
+        return (va < vb ? -1 : va > vb ? 1 : 0) * (asc ? 1 : -1);
+      });
+      asc = !asc;
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+</script>
+{% endblock %}

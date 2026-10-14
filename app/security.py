@@ -2,7 +2,7 @@ import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,7 +12,9 @@ from app.database import get_db
 from app.config import settings
 
 
-bearer_scheme = HTTPBearer()
+# auto_error=False: a missing Authorization header must NOT auto-reject, because the
+# web UI authenticates via a cookie instead. We decide below.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 def hash_password(password: str) -> str:
     password_bytes = password.encode()
@@ -53,10 +55,18 @@ def decode_token(token: str) -> dict:
     )
 
 async def get_current_user(
-    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db)
 ) -> models.User:
-    token = creds.credentials
+    # Accept the token from the Authorization header (JSON API / native clients) OR
+    # from an access_token cookie (the web UI). Header takes precedence if present.
+    token = creds.credentials if creds else request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
 
     try:
         payload = decode_token(token)

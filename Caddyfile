@@ -7,6 +7,6 @@ nikva.duckdns.org {
 	# app. This is the coarse infrastructure limit (DoS / early reject) -- it does NOT
 	# replace the app's per-user quota + disk checks, it complements them.
 	request_body {
-		max_size 100MB
+		max_size 500MB
 	}
 }
