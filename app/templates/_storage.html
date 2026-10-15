@@ -1,0 +1,6 @@
+<div class="storage">
+  <div class="storage-track">
+    <div class="storage-fill" style="width: {{ (used / capacity * 100) if capacity else 0 }}%"></div>
+  </div>
+  <div class="storage-text">{{ used | filesizeformat }} of {{ capacity | filesizeformat }} used</div>
+</div>

@@ -23,7 +23,19 @@
     table { width:100%; border-collapse:collapse; margin-top:8px; }
     th, td { text-align:left; padding:10px 12px; border-bottom:1px solid #262a31; }
     th { color:var(--muted); font-weight:600; user-select:none; cursor:pointer; }
+    th.sorted { color:var(--fg); }
+    /* Every header reserves the arrow's width; only the sorted one is visible, so
+       switching sort columns doesn't resize anything. */
+    th .arrow { font-size:0.75em; margin-left:3px; visibility:hidden; }
+    th.sorted .arrow { visibility:visible; }
     tbody tr:hover { background:#20242b; }
+    .upload { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
+    td button { background:none; border:none; color:var(--accent); cursor:pointer; padding:0; margin-left:10px; font:inherit; }
+    #upload-error { min-height:1.2em; margin-bottom:8px; }
+    .storage { margin:4px 0 16px; }
+    .storage-track { background:#262a31; border-radius:6px; height:10px; overflow:hidden; }
+    .storage-fill { background:var(--accent); height:100%; transition:width .3s; }
+    .storage-text { color:var(--muted); font-size:0.85rem; margin-top:4px; }
   </style>
 </head>
 <body>

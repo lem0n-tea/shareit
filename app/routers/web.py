@@ -1,5 +1,5 @@
 import jwt
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -12,8 +12,10 @@ from app.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    get_current_user,
     verify_password,
 )
+from app.services import get_file_or_404, get_usage, remove_file, save_upload
 
 router = APIRouter(tags=["web"])
 
@@ -100,3 +102,52 @@ def logout():
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
     return response
+
+
+@router.post("/upload")
+async def web_upload(
+    request: Request,
+    upload: UploadFile = File(...),
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        file = await save_upload(upload, db, request.headers.get("content-length"))
+    except HTTPException as exc:
+        # HTMX ignores non-2xx responses, so return 200 and use response headers to
+        # retarget the error message into the #upload-error area instead of a row.
+        resp = Response(content=exc.detail, media_type="text/html")
+        resp.headers["HX-Retarget"] = "#upload-error"
+        resp.headers["HX-Reswap"] = "innerHTML"
+        return resp
+    # Success: render just the new <tr>; HTMX prepends it to the table body. The
+    # HX-Trigger header fires a "filesChanged" event so the storage bar refreshes.
+    resp = templates.TemplateResponse(request, "_row.html", {"file": file})
+    resp.headers["HX-Trigger"] = "filesChanged"
+    return resp
+
+
+@router.get("/usage", response_class=HTMLResponse)
+def usage(
+    request: Request,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    used, capacity = get_usage(db)
+    return templates.TemplateResponse(
+        request, "_storage.html", {"used": used, "capacity": capacity}
+    )
+
+
+@router.delete("/delete/{file_id}")
+def web_delete(
+    file_id: int,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    remove_file(get_file_or_404(file_id, db), db)
+    # Empty 200 (not 204) so HTMX performs the swap and removes the row; HX-Trigger
+    # refreshes the storage bar.
+    resp = Response(status_code=status.HTTP_200_OK)
+    resp.headers["HX-Trigger"] = "filesChanged"
+    return resp
