@@ -20,11 +20,12 @@
 
   <div id="storage" hx-get="/usage" hx-trigger="load, filesChanged from:body"></div>
 
+  <div class="table-wrap">
   <table id="files">
     <thead>
       <tr>
         <th>Name <span class="arrow">▲</span></th>
-        <th>Type <span class="arrow">▲</span></th>
+        <th class="col-type">Type <span class="arrow">▲</span></th>
         <th>Size <span class="arrow">▲</span></th>
         <th>Uploaded <span class="arrow">▲</span></th>
         <th></th>
@@ -34,6 +35,7 @@
       {% for file in files %}{% include "_row.html" %}{% endfor %}
     </tbody>
   </table>
+  </div>
 </main>
 
 <script>
@@ -53,8 +55,8 @@
       rows.sort((a, b) => {
         const ca = a.children[idx], cb = b.children[idx];
         const numeric = ca.dataset.size !== undefined;
-        let va = ca.dataset.size ?? ca.dataset.ts ?? ca.textContent.trim().toLowerCase();
-        let vb = cb.dataset.size ?? cb.dataset.ts ?? cb.textContent.trim().toLowerCase();
+        let va = ca.dataset.size ?? ca.dataset.ts ?? ca.dataset.name ?? ca.textContent.trim().toLowerCase();
+        let vb = cb.dataset.size ?? cb.dataset.ts ?? cb.dataset.name ?? cb.textContent.trim().toLowerCase();
         if (numeric) { va = +va; vb = +vb; }
         return (va < vb ? -1 : va > vb ? 1 : 0) * (asc ? 1 : -1);
       });
@@ -67,5 +69,39 @@
       th.querySelector('.arrow').textContent = asc ? '▲' : '▼';
     });
   });
+
+  // Convert the UTC timestamps to the viewer's local time + locale format. The cell's
+  // data-ts holds the source UTC ISO string, so this is idempotent and safe to re-run
+  // on HTMX-added rows (new uploads).
+  function localizeTimes() {
+    document.querySelectorAll('#files td[data-ts]').forEach(td => {
+      const d = new Date(td.dataset.ts);
+      if (!isNaN(d)) td.textContent = d.toLocaleString([], {
+        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+    });
+  }
+  localizeTimes();
+  document.body.addEventListener('htmx:afterSettle', localizeTimes);
+
+  // Row action menu (kebab "⋯"). The menu is position:fixed, so it floats above the
+  // scrollable table instead of being clipped by it; we anchor it to the button on open.
+  function closeMenus() {
+    document.querySelectorAll('#files .menu').forEach(m => { m.hidden = true; });
+  }
+  document.addEventListener('click', (e) => {
+    const kebab = e.target.closest('.kebab');
+    const menu = kebab ? kebab.nextElementSibling : null;
+    const wasOpen = menu && !menu.hidden;
+    closeMenus();                                 // any click first closes open menus
+    if (kebab && !wasOpen) {                       // clicking a closed kebab opens it
+      menu.hidden = false;
+      const r = kebab.getBoundingClientRect();
+      menu.style.top = (r.bottom + 4) + 'px';
+      menu.style.left = (r.right - menu.offsetWidth) + 'px';   // right-aligned to the button
+    }
+  });
+  // Close the menu if the page/table scrolls (its anchor would otherwise drift).
+  window.addEventListener('scroll', closeMenus, true);
 </script>
 {% endblock %}

@@ -29,13 +29,46 @@
     th .arrow { font-size:0.75em; margin-left:3px; visibility:hidden; }
     th.sorted .arrow { visibility:visible; }
     tbody tr:hover { background:#20242b; }
+    .ftype { margin-right:8px; }
     .upload { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
-    td button { background:none; border:none; color:var(--accent); cursor:pointer; padding:0; margin-left:10px; font:inherit; }
+    td.actions { text-align:right; width:1%; white-space:nowrap; }
+    .kebab { background:none; border:none; color:var(--muted); cursor:pointer; font-size:1.3rem; line-height:1; padding:0 6px; }
+    .kebab:hover { color:var(--fg); }
+    .menu { position:fixed; background:var(--panel); border:1px solid #2b303a; border-radius:8px; min-width:130px; z-index:50; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,.45); }
+    .menu[hidden] { display:none; }
+    .menu a, .menu button { display:block; width:100%; text-align:left; padding:9px 14px; background:none; border:none; color:var(--fg); cursor:pointer; font:inherit; text-decoration:none; }
+    .menu a:hover, .menu button:hover { background:#20242b; }
     #upload-error { min-height:1.2em; margin-bottom:8px; }
     .storage { margin:4px 0 16px; }
     .storage-track { background:#262a31; border-radius:6px; height:10px; overflow:hidden; }
     .storage-fill { background:var(--accent); height:100%; transition:width .3s; }
     .storage-text { color:var(--muted); font-size:0.85rem; margin-top:4px; }
+    .table-wrap { overflow-x:auto; }           /* fallback: scroll if still too wide */
+    @media (max-width:600px) {
+      main { padding:16px; }
+      header { padding:12px 16px; }
+      header h1 { font-size:1.05rem; }
+      .upload { flex-wrap:wrap; }
+      .upload input[type=file] { flex:1 1 100%; }
+
+      /* Turn the table into stacked cards -- no horizontal scroll on phones. */
+      .table-wrap { overflow:visible; }
+      #files thead { display:none; }
+      #files, #files tbody, #files tr, #files td { display:block; }
+      #files tr { position:relative; border:1px solid #262a31; border-radius:10px;
+                  padding:10px 44px 10px 12px; margin-bottom:8px; }
+      #files tr:hover { background:transparent; }
+      #files td { border:none; padding:0; }
+      /* Name line: prominent, single line, ellipsis if long. */
+      #files td:first-child { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      /* Meta line: type · size · date, muted, on one row below the name. */
+      #files td.col-type, #files td[data-size], #files td[data-ts] {
+        display:inline; color:var(--muted); font-size:0.85rem;
+      }
+      #files td[data-size]::before, #files td[data-ts]::before { content:" · "; }
+      /* Kebab floats at the card's top-right. */
+      #files td.actions { position:absolute; top:6px; right:6px; width:auto; padding:0; }
+    }
   </style>
 </head>
 <body>

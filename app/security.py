@@ -23,17 +23,19 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode(), password_hash.encode())
 
-def create_access_token(subject: models.User) -> str:
+def create_access_token_for_sub(sub: str) -> str:
+    """Build an access token from a subject id directly (no DB/User object needed).
+    Used by the refresh middleware, which only has the id from the refresh token."""
     payload = {
-        "sub": str(subject.id),
+        "sub": sub,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes),
-        "type": "access"
+        "type": "access",
     }
-    return jwt.encode(
-        payload=payload,
-        key=settings.secret_key,
-        algorithm=settings.algorithm
-    )
+    return jwt.encode(payload=payload, key=settings.secret_key, algorithm=settings.algorithm)
+
+
+def create_access_token(subject: models.User) -> str:
+    return create_access_token_for_sub(str(subject.id))
 
 def create_refresh_token(subject: models.User) -> str:
     payload = {
@@ -54,14 +56,31 @@ def decode_token(token: str) -> dict:
         algorithms=[settings.algorithm,]
     )
 
+
+def valid_token_sub(token: str | None, expected_type: str) -> str | None:
+    """Return the token's `sub` if it is a valid, non-expired token of the expected
+    type; otherwise None. Used by the refresh middleware to check cookies cheaply."""
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except jwt.InvalidTokenError:  # covers expired + malformed
+        return None
+    if payload.get("type") != expected_type:
+        return None
+    return payload.get("sub")
+
 async def get_current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db)
 ) -> models.User:
-    # Accept the token from the Authorization header (JSON API / native clients) OR
-    # from an access_token cookie (the web UI). Header takes precedence if present.
-    token = creds.credentials if creds else request.cookies.get("access_token")
+    # Token source order: Authorization header (API clients) > a fresh token the
+    # refresh middleware stashed on request.state for this request > the cookie.
+    if creds:
+        token = creds.credentials
+    else:
+        token = getattr(request.state, "access_token", None) or request.cookies.get("access_token")
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

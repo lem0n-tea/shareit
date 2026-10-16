@@ -1,3 +1,5 @@
+from datetime import timezone
+
 import jwt
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -24,11 +26,52 @@ router = APIRouter(tags=["web"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+def _utc_iso(dt) -> str:
+    """Emit the timestamp as an ISO string EXPLICITLY marked UTC (+00:00). SQLite
+    hands datetimes back naive, so we attach UTC; the browser then converts to the
+    viewer's local timezone. Without the marker, JS would misread it as local time."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+templates.env.filters["utc_iso"] = _utc_iso
+
+
+def _file_icon(content_type: str) -> str:
+    """Map a MIME type to an emoji icon for the file list."""
+    ct = (content_type or "").lower()
+    if ct.startswith("image/"):
+        return "🖼️"
+    if ct.startswith("video/"):
+        return "🎞️"
+    if ct.startswith("audio/"):
+        return "🎵"
+    if ct == "application/pdf":
+        return "📕"
+    if ct.startswith("text/"):
+        return "📄"
+    if any(k in ct for k in ("zip", "rar", "tar", "gzip", "7z", "compressed")):
+        return "🗜️"
+    if "word" in ct or "opendocument.text" in ct:
+        return "📝"
+    if "sheet" in ct or "excel" in ct or "csv" in ct:
+        return "📊"
+    if "presentation" in ct or "powerpoint" in ct:
+        return "📽️"
+    return "📎"
+
+
+templates.env.filters["file_icon"] = _file_icon
+
+
 def _user_from_cookie(request: Request, db: Session) -> models.User | None:
     """Return the logged-in user from the access_token cookie, or None. Unlike
     get_current_user (which raises 401 for the API), web pages use this to decide
     whether to render or redirect to the login page."""
-    token = request.cookies.get("access_token")
+    # Prefer a fresh token the refresh middleware set on request.state this request;
+    # otherwise the cookie.
+    token = getattr(request.state, "access_token", None) or request.cookies.get("access_token")
     if not token:
         return None
     try:
