@@ -6,7 +6,9 @@ nikva.duckdns.org {
 	# Edge guard: reject any request whose body exceeds this, before it reaches the
 	# app. This is the coarse infrastructure limit (DoS / early reject) -- it does NOT
 	# replace the app's per-user quota + disk checks, it complements them.
+	# Headroom above the app's 5 GB per-file cap so legit uploads pass; the app does
+	# the precise size/quota checks and rejects cleanly.
 	request_body {
-		max_size 500MB
+		max_size 6GB
 	}
 }

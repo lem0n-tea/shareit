@@ -39,6 +39,10 @@
     .menu a, .menu button { display:block; width:100%; text-align:left; padding:9px 14px; background:none; border:none; color:var(--fg); cursor:pointer; font:inherit; text-decoration:none; }
     .menu a:hover, .menu button:hover { background:#20242b; }
     #upload-error { min-height:1.2em; margin-bottom:8px; }
+    #upload-progress { width:100%; height:8px; margin-top:8px; border:none; border-radius:4px; background:#262a31; }
+    #upload-progress::-webkit-progress-bar { background:#262a31; border-radius:4px; }
+    #upload-progress::-webkit-progress-value { background:var(--accent); border-radius:4px; }
+    #upload-progress::-moz-progress-bar { background:var(--accent); border-radius:4px; }
     .storage { margin:4px 0 16px; }
     .storage-track { background:#262a31; border-radius:6px; height:10px; overflow:hidden; }
     .storage-fill { background:var(--accent); height:100%; transition:width .3s; }
@@ -47,7 +51,7 @@
     .top-bar .upload { margin:0; }
     .panel-clip { flex:1; min-width:0; }
     .panel-upload { flex:0 0 auto; }
-    .panel-label { display:block; font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px; }
+    .panel-label { display:block; font-size:0.78rem; color:var(--muted); letter-spacing:0.04em; margin-bottom:6px; }
     .clip { display:flex; gap:10px; align-items:center; min-width:0; }
     .clip-box { flex:1; min-width:0; display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid #2b303a; border-radius:8px; padding:10px 8px 10px 12px; }
     .clip-text { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); user-select:none; }

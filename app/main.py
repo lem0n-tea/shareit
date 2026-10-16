@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 
 from app.config import settings
 from app.database import Base, engine
@@ -41,6 +41,21 @@ async def refresh_access_cookie(request: Request, call_next):
             max_age=settings.access_token_expire_minutes * 60,
         )
     return response
+
+
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    """Reject oversized uploads at the edge, BEFORE FastAPI parses the body (which
+    would otherwise receive and spool the whole file to a temp dir first). The web UI
+    also pre-checks file size in the browser, so this mainly guards non-browser or
+    JS-bypassed requests."""
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > settings.max_upload_size:
+        return Response(
+            f"File exceeds the {settings.max_upload_size // 1024**3} GB limit",
+            status_code=413,
+        )
+    return await call_next(request)
 
 
 # Mount the files router. Its routes live under the prefix it declares ("/files").

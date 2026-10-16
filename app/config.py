@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     storage_dir: str = "./data/storage"
     storage_limit: int | None = None
+    max_upload_size: int = 5 * 1024**3  # per-file cap (5 GiB)
 
     database_url: str = "sqlite:///./data/shareit.db"
 

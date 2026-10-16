@@ -14,15 +14,17 @@
     <div class="panel panel-upload">
       <span class="panel-label">Upload a file</span>
       <form class="upload"
+            data-max-size="{{ max_upload_size }}"
             hx-post="/upload"
             hx-target="#files tbody"
             hx-swap="afterbegin"
             hx-encoding="multipart/form-data"
-            hx-on::before-request="document.getElementById('upload-error').innerHTML=''"
-            hx-on::after-request="this.reset()">
+            hx-on::before-request="document.getElementById('upload-error').innerHTML=''; this.querySelector('button').disabled=true"
+            hx-on::after-request="this.reset(); this.querySelector('button').disabled=false">
         <input type="file" name="upload" required>
         <button type="submit">Upload</button>
       </form>
+      <progress id="upload-progress" max="100" value="0" hidden></progress>
     </div>
   </div>
   <div id="upload-error" class="error"></div>
@@ -141,6 +143,35 @@
     }
     // htmx.ajax swaps the returned panel in and fires afterSettle (re-localizes time).
     htmx.ajax('POST', '/clip', { target: '#clipboard', swap: 'outerHTML', values: { snippet: text } });
+  });
+
+  // Client-side size guard: reject an oversized file BEFORE the upload starts, so the
+  // user isn't made to wait for a doomed transfer. The server still enforces it too.
+  document.body.addEventListener('htmx:beforeRequest', (e) => {
+    if (!e.target.matches('.upload')) return;
+    const max = Number(e.target.dataset.maxSize);
+    const file = e.target.querySelector('input[type=file]').files[0];
+    if (file && max && file.size > max) {
+      e.preventDefault();  // cancel the request
+      document.getElementById('upload-error').textContent =
+        'File exceeds the ' + Math.round(max / 1024 ** 3) + ' GB limit';
+      e.target.querySelector('button').disabled = false;
+    }
+  });
+
+  // Upload progress bar. HTMX fires htmx:xhr:progress on the uploading form as bytes go up.
+  const uploadProgress = document.getElementById('upload-progress');
+  document.body.addEventListener('htmx:xhr:progress', (e) => {
+    if (!e.target.matches('.upload')) return;
+    uploadProgress.hidden = false;
+    if (e.detail.lengthComputable) {
+      uploadProgress.value = Math.round(e.detail.loaded / e.detail.total * 100);
+    }
+  });
+  document.body.addEventListener('htmx:afterRequest', (e) => {
+    if (!e.target.matches('.upload')) return;
+    uploadProgress.hidden = true;
+    uploadProgress.value = 0;
   });
 </script>
 {% endblock %}

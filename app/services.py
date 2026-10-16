@@ -25,16 +25,22 @@ STORAGE_LIMIT = settings.storage_limit or shutil.disk_usage(STORAGE_DIR).total
 async def save_upload(
     upload: UploadFile, db: Session, content_length: str | None = None
 ) -> models.File:
-    """Validate quota + disk space, write the bytes to disk, and create the row.
-    Writes the file FIRST, then commits the row; on commit failure it deletes the
-    just-written file (compensating cleanup) so no orphan is left."""
+    """Stream the upload to disk in 1 MB chunks (never loading the whole file into
+    memory), enforcing the per-file cap and the storage quota as it goes. Writes the
+    file first, then commits the row; cleans up the file on any failure."""
     disk_free_space = shutil.disk_usage(STORAGE_DIR).free
     current_storage_size = db.scalar(select(func.sum(models.File.size))) or 0
     available_space = min(disk_free_space, STORAGE_LIMIT - current_storage_size)
+    max_size = settings.max_upload_size
+    too_big = f"File exceeds the {max_size // 1024**3} GB limit"
 
-    # Optional early reject (Caddy also enforces a body cap at the edge in production).
-    if content_length and int(content_length) > available_space:
-        raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space")
+    # Fast reject using the declared size, before streaming a single byte.
+    if content_length:
+        declared = int(content_length)
+        if declared > max_size:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, too_big)
+        if declared > available_space:
+            raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space")
 
     name, extension = os.path.splitext(upload.filename or "")
     extension = extension[1:].lower() or None
@@ -46,14 +52,32 @@ async def save_upload(
         guessed, _ = mimetypes.guess_type(upload.filename or "")
         content_type = guessed or "application/octet-stream"
 
-    contents = await upload.read()
-    size = len(contents)
-    if size > available_space:
-        raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space")
-
     filepath = uuid.uuid4().hex
-    with open(os.path.join(STORAGE_DIR, filepath), "wb") as f:
-        f.write(contents)
+    dest = os.path.join(STORAGE_DIR, filepath)
+    size = 0
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                chunk = await upload.read(1024 * 1024)  # 1 MB at a time
+                if not chunk:
+                    break
+                size += len(chunk)
+                # Enforce the limits even if Content-Length was absent or lied.
+                if size > max_size:
+                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, too_big)
+                if size > available_space:
+                    raise HTTPException(
+                        status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space"
+                    )
+                out.write(chunk)
+    except HTTPException:
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise
+    except Exception as e:
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "File upload failed") from e
 
     file = models.File(
         name=name, extension=extension, content_type=content_type,
@@ -64,11 +88,11 @@ async def save_upload(
         db.commit()
     except IntegrityError:
         db.rollback()
-        os.remove(os.path.join(STORAGE_DIR, filepath))
+        os.remove(dest)
         raise HTTPException(status.HTTP_409_CONFLICT, "Such file already exists")
     except Exception as e:
         db.rollback()
-        os.remove(os.path.join(STORAGE_DIR, filepath))
+        os.remove(dest)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "File upload failed") from e
 
     db.refresh(file)

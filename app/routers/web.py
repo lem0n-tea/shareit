@@ -120,7 +120,9 @@ def home(request: Request, db: Session = Depends(get_db)):
     ).all()
     clipboard = read_clipboard(db)
     return templates.TemplateResponse(
-        request, "home.html", {"files": files, "clipboard": clipboard}
+        request,
+        "home.html",
+        {"files": files, "clipboard": clipboard, "max_upload_size": settings.max_upload_size},
     )
 
 
