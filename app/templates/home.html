@@ -21,7 +21,8 @@
             hx-encoding="multipart/form-data"
             hx-on::before-request="document.getElementById('upload-error').innerHTML=''; this.querySelector('button').disabled=true"
             hx-on::after-request="this.reset(); this.querySelector('button').disabled=false">
-        <input type="file" name="upload" required>
+        <label class="browse">Browse…<input type="file" name="upload"></label>
+        <span class="file-name" data-empty="No file selected.">No file selected.</span>
         <button type="submit">Upload</button>
       </form>
       <progress id="upload-progress" max="100" value="0" hidden></progress>
@@ -151,13 +152,27 @@
     if (!e.target.matches('.upload')) return;
     const max = Number(e.target.dataset.maxSize);
     const file = e.target.querySelector('input[type=file]').files[0];
-    if (file && max && file.size > max) {
+    const fail = (msg) => {
       e.preventDefault();  // cancel the request
-      document.getElementById('upload-error').textContent =
-        'File exceeds the ' + Math.round(max / 1024 ** 3) + ' GB limit';
+      document.getElementById('upload-error').textContent = msg;
       e.target.querySelector('button').disabled = false;
-    }
+    };
+    if (!file) return fail('Choose a file first');
+    if (max && file.size > max) return fail('File exceeds the ' + Math.round(max / 1024 ** 3) + ' GB limit');
   });
+
+  // Show the chosen filename (CSS truncates it) and clear it when the form resets.
+  document.body.addEventListener('change', (e) => {
+    if (!e.target.matches('.upload input[type=file]')) return;
+    const span = e.target.closest('.upload').querySelector('.file-name');
+    const f = e.target.files[0];
+    span.textContent = f ? f.name : span.dataset.empty;
+  });
+  document.body.addEventListener('reset', (e) => {
+    if (!e.target.matches('.upload')) return;
+    const span = e.target.querySelector('.file-name');
+    span.textContent = span.dataset.empty;
+  }, true);  // 'reset' doesn't bubble -> capture phase
 
   // Upload progress bar. HTMX fires htmx:xhr:progress on the uploading form as bytes go up.
   const uploadProgress = document.getElementById('upload-progress');
