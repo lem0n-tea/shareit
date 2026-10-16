@@ -17,7 +17,14 @@ from app.security import (
     get_current_user,
     verify_password,
 )
-from app.services import get_file_or_404, get_usage, remove_file, save_upload
+from app.services import (
+    get_file_or_404,
+    get_usage,
+    read_clipboard,
+    remove_file,
+    save_upload,
+    set_clipboard,
+)
 
 router = APIRouter(tags=["web"])
 
@@ -111,7 +118,10 @@ def home(request: Request, db: Session = Depends(get_db)):
     files = db.scalars(
         select(models.File).order_by(models.File.uploaded_at.desc())
     ).all()
-    return templates.TemplateResponse(request, "home.html", {"files": files})
+    clipboard = read_clipboard(db)
+    return templates.TemplateResponse(
+        request, "home.html", {"files": files, "clipboard": clipboard}
+    )
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -194,3 +204,15 @@ def web_delete(
     resp = Response(status_code=status.HTTP_200_OK)
     resp.headers["HX-Trigger"] = "filesChanged"
     return resp
+
+
+@router.post("/clip", response_class=HTMLResponse)
+def web_set_clipboard(
+    request: Request,
+    snippet: str = Form(""),
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Truncate as a server-side backstop to the textarea's maxlength.
+    clipboard = set_clipboard(snippet[:10000], db)
+    return templates.TemplateResponse(request, "_clipboard.html", {"clipboard": clipboard})

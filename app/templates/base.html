@@ -43,13 +43,24 @@
     .storage-track { background:#262a31; border-radius:6px; height:10px; overflow:hidden; }
     .storage-fill { background:var(--accent); height:100%; transition:width .3s; }
     .storage-text { color:var(--muted); font-size:0.85rem; margin-top:4px; }
+    .top-bar { display:flex; gap:16px; align-items:flex-start; margin-bottom:8px; }
+    .top-bar .upload { margin:0; }
+    .panel-clip { flex:1; min-width:0; }
+    .panel-upload { flex:0 0 auto; }
+    .panel-label { display:block; font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px; }
+    .clip { display:flex; gap:10px; align-items:center; min-width:0; }
+    .clip-box { flex:1; min-width:0; display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid #2b303a; border-radius:8px; padding:10px 8px 10px 12px; }
+    .clip-text { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); user-select:none; }
+    .clip .copy { background:none; border:none; color:var(--muted); cursor:pointer; padding:0 4px; font-size:1.05rem; line-height:1; }
+    .clip .copy:hover { color:var(--fg); }
     .table-wrap { overflow-x:auto; }           /* fallback: scroll if still too wide */
     @media (max-width:600px) {
       main { padding:16px; }
       header { padding:12px 16px; }
       header h1 { font-size:1.05rem; }
-      .upload { flex-wrap:wrap; }
-      .upload input[type=file] { flex:1 1 100%; }
+      .top-bar { flex-direction:column; }
+      .panel-upload, .panel-clip { width:100%; min-width:0; }
+      .upload input[type=file] { flex:1; min-width:0; }
 
       /* Turn the table into stacked cards -- no horizontal scroll on phones. */
       .table-wrap { overflow:visible; }

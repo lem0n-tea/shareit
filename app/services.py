@@ -81,6 +81,23 @@ def get_usage(db: Session) -> tuple[int, int]:
     return used, STORAGE_LIMIT
 
 
+def read_clipboard(db: Session) -> models.Clipboard | None:
+    return db.scalars(select(models.Clipboard)).first()
+
+
+def set_clipboard(snippet: str, db: Session) -> models.Clipboard:
+    """Upsert the single clipboard row (portable ORM update → onupdate refreshes the time)."""
+    row = db.scalars(select(models.Clipboard)).first()
+    if row is None:
+        row = models.Clipboard(snippet=snippet)
+        db.add(row)
+    else:
+        row.snippet = snippet
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def get_file_or_404(file_id: int, db: Session) -> models.File:
     file = db.scalars(select(models.File).where(models.File.id == file_id)).first()
     if not file:

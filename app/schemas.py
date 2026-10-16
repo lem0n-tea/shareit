@@ -17,6 +17,15 @@ class FileOut(BaseModel):
     size: int
     uploaded_at: datetime
 
+class ClipboardIn(BaseModel):
+    snippet: str = Field(max_length=10000, default="")
+
+class ClipboardOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    snippet: str
+    updated_at: datetime | None
+
 class PasswordIn(BaseModel):
     password: str = Field(min_length=8)
 

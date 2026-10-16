@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import files, auth, web
+from app.routers import files, auth, web, clipboard
 from app.security import create_access_token_for_sub, valid_token_sub
 
 # Importing models registers your tables on Base.metadata. WITHOUT this import,
@@ -45,6 +45,8 @@ async def refresh_access_cookie(request: Request, call_next):
 
 # Mount the files router. Its routes live under the prefix it declares ("/files").
 app.include_router(files.router)
+
+app.include_router(clipboard.router)
 
 app.include_router(auth.router)
 

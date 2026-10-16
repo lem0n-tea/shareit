@@ -6,16 +6,25 @@
   <a href="/logout">Log out</a>
 </header>
 <main>
-  <form class="upload"
-        hx-post="/upload"
-        hx-target="#files tbody"
-        hx-swap="afterbegin"
-        hx-encoding="multipart/form-data"
-        hx-on::before-request="document.getElementById('upload-error').innerHTML=''"
-        hx-on::after-request="this.reset()">
-    <input type="file" name="upload" required>
-    <button type="submit">Upload</button>
-  </form>
+  <div class="top-bar">
+    <div class="panel panel-clip">
+      <span class="panel-label">Share clipboard between devices</span>
+      {% include "_clipboard.html" %}
+    </div>
+    <div class="panel panel-upload">
+      <span class="panel-label">Upload a file</span>
+      <form class="upload"
+            hx-post="/upload"
+            hx-target="#files tbody"
+            hx-swap="afterbegin"
+            hx-encoding="multipart/form-data"
+            hx-on::before-request="document.getElementById('upload-error').innerHTML=''"
+            hx-on::after-request="this.reset()">
+        <input type="file" name="upload" required>
+        <button type="submit">Upload</button>
+      </form>
+    </div>
+  </div>
   <div id="upload-error" class="error"></div>
 
   <div id="storage" hx-get="/usage" hx-trigger="load, filesChanged from:body"></div>
@@ -74,7 +83,7 @@
   // data-ts holds the source UTC ISO string, so this is idempotent and safe to re-run
   // on HTMX-added rows (new uploads).
   function localizeTimes() {
-    document.querySelectorAll('#files td[data-ts]').forEach(td => {
+    document.querySelectorAll('[data-ts]').forEach(td => {
       const d = new Date(td.dataset.ts);
       if (!isNaN(d)) td.textContent = d.toLocaleString([], {
         year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -103,5 +112,35 @@
   });
   // Close the menu if the page/table scrolls (its anchor would otherwise drift).
   window.addEventListener('scroll', closeMenus, true);
+
+  // Copy the shared snippet to the device clipboard. (Clipboard API needs a secure
+  // context — HTTPS in production, localhost in dev — both of which we have.)
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.copy');
+    if (!btn) return;
+    navigator.clipboard.writeText(btn.dataset.copy || '').then(() => {
+      const label = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = label; }, 1200);
+    });
+  });
+
+  // Share: read the OS clipboard and upload it. readText() needs a user gesture +
+  // permission and isn't supported everywhere (Firefox/iOS Safari), so we fail softly.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.share');
+    if (!btn) return;
+    let text;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      const label = btn.textContent;
+      btn.textContent = "Couldn't read clipboard";
+      setTimeout(() => { btn.textContent = label; }, 1500);
+      return;
+    }
+    // htmx.ajax swaps the returned panel in and fires afterSettle (re-localizes time).
+    htmx.ajax('POST', '/clip', { target: '#clipboard', swap: 'outerHTML', values: { snippet: text } });
+  });
 </script>
 {% endblock %}
