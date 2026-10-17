@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import models
+from app import icons, models
 from app.config import settings
 from app.database import get_db
 from app.security import (
@@ -45,31 +45,8 @@ def _utc_iso(dt) -> str:
 templates.env.filters["utc_iso"] = _utc_iso
 
 
-def _file_icon(content_type: str) -> str:
-    """Map a MIME type to an emoji icon for the file list."""
-    ct = (content_type or "").lower()
-    if ct.startswith("image/"):
-        return "🖼️"
-    if ct.startswith("video/"):
-        return "🎞️"
-    if ct.startswith("audio/"):
-        return "🎵"
-    if ct == "application/pdf":
-        return "📕"
-    if ct.startswith("text/"):
-        return "📄"
-    if any(k in ct for k in ("zip", "rar", "tar", "gzip", "7z", "compressed")):
-        return "🗜️"
-    if "word" in ct or "opendocument.text" in ct:
-        return "📝"
-    if "sheet" in ct or "excel" in ct or "csv" in ct:
-        return "📊"
-    if "presentation" in ct or "powerpoint" in ct:
-        return "📽️"
-    return "📎"
-
-
-templates.env.filters["file_icon"] = _file_icon
+templates.env.filters["file_icon"] = icons.file_icon
+templates.env.globals["icon"] = icons.icon
 
 
 def _user_from_cookie(request: Request, db: Session) -> models.User | None:

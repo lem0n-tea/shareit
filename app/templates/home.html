@@ -2,8 +2,13 @@
 {% block title %}Your files — Shareit{% endblock %}
 {% block content %}
 <header>
-  <h1>Shareit</h1>
-  <a href="/logout">Log out</a>
+  <div class="header-inner">
+    <h1>Shareit</h1>
+    <div class="header-right">
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme"></button>
+      <a href="/logout">Log out</a>
+    </div>
+  </div>
 </header>
 <main>
   <div class="top-bar">
@@ -19,13 +24,25 @@
             hx-target="#files tbody"
             hx-swap="afterbegin"
             hx-encoding="multipart/form-data"
-            hx-on::before-request="document.getElementById('upload-error').innerHTML=''; this.querySelector('button').disabled=true"
-            hx-on::after-request="this.reset(); this.querySelector('button').disabled=false">
-        <label class="browse">Browse…<input type="file" name="upload"></label>
-        <span class="file-name" data-empty="No file selected.">No file selected.</span>
-        <button type="submit">Upload</button>
+            hx-on::before-request="document.getElementById('upload-error').innerHTML=''; this.querySelector('button[type=submit]').disabled=true"
+            hx-on::after-request="this.reset()">
+        <label class="dropzone">
+          <input type="file" name="upload">
+          {{ icon('upload') }}
+          <span class="dz-title">Drop a file here, or <span class="dz-link">browse</span></span>
+          <span class="dz-hint">Maximum size: {{ max_upload_size // (1024 ** 3) }} GB</span>
+        </label>
+        <div class="dz-selected" hidden>
+          <span class="ftype">{{ icon('file') }}</span>
+          <span class="dz-file-name"></span>
+          <span class="dz-file-size"></span>
+          <button type="button" class="dz-remove" aria-label="Remove file">{{ icon('trash') }}</button>
+        </div>
+        <progress id="upload-progress" max="100" value="0" hidden></progress>
+        <div class="dz-actions">
+          <button type="submit" disabled>Upload</button>
+        </div>
       </form>
-      <progress id="upload-progress" max="100" value="0" hidden></progress>
     </div>
   </div>
   <div id="upload-error" class="error"></div>
@@ -121,10 +138,11 @@
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.copy');
     if (!btn) return;
+    const CHECK = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M20 6 9 17l-5-5"/></svg>';
+    const original = btn.innerHTML;
     navigator.clipboard.writeText(btn.dataset.copy || '').then(() => {
-      const label = btn.textContent;
-      btn.textContent = '✓';
-      setTimeout(() => { btn.textContent = label; }, 1200);
+      btn.innerHTML = CHECK;
+      setTimeout(() => { btn.innerHTML = original; }, 1200);
     });
   });
 
@@ -150,29 +168,89 @@
   // user isn't made to wait for a doomed transfer. The server still enforces it too.
   document.body.addEventListener('htmx:beforeRequest', (e) => {
     if (!e.target.matches('.upload')) return;
-    const max = Number(e.target.dataset.maxSize);
     const file = e.target.querySelector('input[type=file]').files[0];
-    const fail = (msg) => {
+    const msg = !file ? 'Choose a file first' : selectionError(e.target);
+    if (msg) {
       e.preventDefault();  // cancel the request
       document.getElementById('upload-error').textContent = msg;
-      e.target.querySelector('button').disabled = false;
-    };
-    if (!file) return fail('Choose a file first');
-    if (max && file.size > max) return fail('File exceeds the ' + Math.round(max / 1024 ** 3) + ' GB limit');
+      e.target.querySelector('button[type=submit]').disabled = false;
+    }
   });
 
-  // Show the chosen filename (CSS truncates it) and clear it when the form resets.
+  // --- Dropzone: selected-file display, drag & drop, remove ---
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    const u = ['KB', 'MB', 'GB', 'TB']; let i = -1;
+    do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+    return n.toFixed(n < 10 ? 1 : 0) + ' ' + u[i];
+  }
+  // Parse a filename into a lowercased "base<SEP>ext" key, matching the server's
+  // os.path.splitext rule (a leading dot is part of the name, not an extension).
+  function fileKey(filename) {
+    const dot = filename.lastIndexOf('.');
+    const base = dot > 0 ? filename.slice(0, dot) : filename;
+    const ext = dot > 0 ? filename.slice(dot + 1) : '';
+    return base.toLowerCase() + '\u0000' + ext.toLowerCase();
+  }
+  // Keys (name + extension) of the files already shown in the table.
+  function existingKeys() {
+    const set = new Set();
+    document.querySelectorAll('#files td[data-name]').forEach((td) => {
+      set.add(td.dataset.name + '\u0000' + (td.dataset.ext || ''));
+    });
+    return set;
+  }
+  // Error message for the selected file, or null if it's OK to upload.
+  function selectionError(form) {
+    const f = form.querySelector('input[type=file]').files[0];
+    if (!f) return null;
+    const max = Number(form.dataset.maxSize);
+    if (max && f.size > max) return 'File exceeds the ' + Math.round(max / 1024 ** 3) + ' GB limit';
+    if (existingKeys().has(fileKey(f.name))) return 'A file with this name already exists';
+    return null;
+  }
+  function validateSelection(form) {
+    const f = form.querySelector('input[type=file]').files[0];
+    const sel = form.querySelector('.dz-selected');
+    const btn = form.querySelector('button[type=submit]');
+    const err = document.getElementById('upload-error');
+    if (!f) { sel.hidden = true; btn.disabled = true; err.textContent = ''; return; }
+    form.querySelector('.dz-file-name').textContent = f.name;
+    form.querySelector('.dz-file-size').textContent = formatBytes(f.size);
+    sel.hidden = false;
+    const msg = selectionError(form);     // oversized OR duplicate -> block with message
+    err.textContent = msg || '';
+    btn.disabled = !!msg;
+  }
   document.body.addEventListener('change', (e) => {
-    if (!e.target.matches('.upload input[type=file]')) return;
-    const span = e.target.closest('.upload').querySelector('.file-name');
-    const f = e.target.files[0];
-    span.textContent = f ? f.name : span.dataset.empty;
+    if (e.target.matches('.upload input[type=file]')) validateSelection(e.target.closest('.upload'));
   });
   document.body.addEventListener('reset', (e) => {
-    if (!e.target.matches('.upload')) return;
-    const span = e.target.querySelector('.file-name');
-    span.textContent = span.dataset.empty;
+    if (e.target.matches('.upload')) {
+      e.target.querySelector('.dz-selected').hidden = true;
+      e.target.querySelector('button[type=submit]').disabled = true;
+    }
   }, true);  // 'reset' doesn't bubble -> capture phase
+  document.addEventListener('click', (e) => {
+    const rm = e.target.closest('.dz-remove');
+    if (!rm) return;
+    const form = rm.closest('.upload');
+    form.querySelector('input[type=file]').value = '';
+    validateSelection(form);
+  });
+  document.querySelectorAll('.dropzone').forEach((dz) => {
+    const input = dz.querySelector('input[type=file]');
+    ['dragover', 'dragenter'].forEach((ev) =>
+      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('dragover'); }));
+    ['dragleave', 'dragend', 'drop'].forEach((ev) =>
+      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('dragover'); }));
+    dz.addEventListener('drop', (e) => {
+      if (e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+  });
 
   // Upload progress bar. HTMX fires htmx:xhr:progress on the uploading form as bytes go up.
   const uploadProgress = document.getElementById('upload-progress');

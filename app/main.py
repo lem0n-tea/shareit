@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import Base, engine
@@ -16,6 +17,9 @@ from app import models
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Shareit")
+
+# Serve the stylesheet (and any future static assets) from app/static.
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 @app.middleware("http")

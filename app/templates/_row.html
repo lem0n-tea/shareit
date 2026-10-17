@@ -1,5 +1,5 @@
 <tr>
-  <td data-name="{{ file.name | lower }}"><span class="ftype">{{ file.content_type | file_icon }}</span>{{ file.name }}</td>
+  <td data-name="{{ file.name | lower }}" data-ext="{{ (file.extension or '') | lower }}"><span class="ftype">{{ file.content_type | file_icon }}</span>{{ file.name }}</td>
   <td class="col-type">{{ (file.extension | upper) if file.extension else "—" }}</td>
   <td data-size="{{ file.size }}">{{ file.size | filesizeformat }}</td>
   <td data-ts="{{ file.uploaded_at | utc_iso }}">{{ file.uploaded_at.strftime("%Y-%m-%d %H:%M") }} UTC</td>
