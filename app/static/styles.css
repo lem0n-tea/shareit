@@ -87,6 +87,7 @@ header { padding: 16px 0; border-bottom: 1px solid var(--border); }
   max-width: var(--content-max); margin: 0 auto; padding: 0 24px;
 }
 header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+.center h1 .brand-accent, header h1 .brand-accent { color: var(--accent-strong); }
 .header-right { display: flex; align-items: center; gap: 14px; }
 
 main { max-width: var(--content-max); margin: 0 auto; padding: 28px 24px; }
@@ -111,6 +112,14 @@ button:disabled { opacity: .55; cursor: default; }
   width: 38px; height: 38px; padding: 0; border-radius: var(--radius-sm);
   font-size: 1.05rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
 }
+
+/* Secondary (ghost) button, e.g. Log Out — subtle, not the loud accent button. */
+.logout-form { display: contents; }   /* let the button be a direct flex child of .header-right */
+.btn-ghost {
+  height: 38px; padding: 0 14px; display: inline-flex; align-items: center;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: var(--surface-2); border-color: var(--muted); }
 
 /* ---- Inputs ---- */
 input {

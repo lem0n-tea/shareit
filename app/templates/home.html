@@ -3,10 +3,12 @@
 {% block content %}
 <header>
   <div class="header-inner">
-    <h1>Shareit</h1>
+    <h1>Share<span class="brand-accent">it</span></h1>
     <div class="header-right">
       <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme"></button>
-      <a href="/logout">Log out</a>
+      <form action="/logout" method="get" class="logout-form">
+        <button type="submit" class="btn-ghost">Log Out</button>
+      </form>
     </div>
   </div>
 </header>
