@@ -1,7 +1,7 @@
 from datetime import timezone
 
 import jwt
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -143,16 +143,10 @@ async def web_upload(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    try:
-        file = await save_upload(upload, db, request.headers.get("content-length"))
-    except HTTPException as exc:
-        # HTMX ignores non-2xx responses, so return 200 and use response headers to
-        # retarget the error message into the #upload-error area instead of a row.
-        resp = Response(content=exc.detail, media_type="text/html")
-        resp.headers["HX-Retarget"] = "#upload-error"
-        resp.headers["HX-Reswap"] = "innerHTML"
-        return resp
-    # Success: render just the new <tr>; HTMX prepends it to the table body. The
+    # Let save_upload's HTTPException (409/413/507) propagate with its real status and
+    # detail; the client's upload queue reads them and shows the error against the file.
+    file = await save_upload(upload, db, request.headers.get("content-length"))
+    # Success: render just the new <tr>; the client prepends it to the table body. The
     # HX-Trigger header fires a "filesChanged" event so the storage bar refreshes.
     resp = templates.TemplateResponse(request, "_row.html", {"file": file})
     resp.headers["HX-Trigger"] = "filesChanged"

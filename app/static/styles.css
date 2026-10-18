@@ -153,27 +153,42 @@ form.login {
 .dz-title { font-weight: 500; color: var(--fg); }
 .dz-link { color: var(--accent-strong); text-decoration: underline; }
 .dz-hint { font-size: 0.82rem; color: var(--muted); }
-.dz-selected {
-  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+/* Staging list: one row per file waiting to upload (or that failed). */
+.dz-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.dz-list[hidden] { display: none; }   /* only shown when something is staged */
+.dz-item {
+  position: relative;   /* anchor for the pinned trash button */
+  display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px;
   background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 10px 12px;
+  border-radius: var(--radius-sm); padding: 10px 40px 10px 12px;  /* right room for trash */
 }
-.dz-selected[hidden] { display: none; }  /* let the hidden attr win over display:flex */
-.dz-selected .ftype { color: var(--accent-strong); margin-right: 0; }
-.dz-file-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-weight: 500; }
+.dz-item .ftype { color: var(--accent-strong); margin-right: 0; }
+.dz-item[data-status="error"] { border-color: var(--err); }
+.dz-item[data-status="uploading"] { opacity: 0.85; }
+.dz-item[data-status="uploading"] .dz-remove { display: none; }  /* can't cancel mid-upload */
+/* Filename + error share this box and only wrap between EACH OTHER, so the size and the
+   trash always stay on line 1. The error drops under the name when they don't fit inline. */
+.dz-main { flex: 1 1 8rem; min-width: 8rem; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; }
+/* Filename ellipsizes but never shrinks below 8rem (its max truncation), so it stays identifiable. */
+.dz-file-name { flex: 1 1 8rem; min-width: 8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-weight: 500; }
 .dz-file-size { font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; color: var(--muted); }
-.dz-remove { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; display: inline-flex; }
+/* The error is never truncated; it sits beside the name or drops to its own line. */
+.dz-status { flex-shrink: 0; white-space: nowrap; font-size: 0.82rem; color: var(--err); }
+.dz-status:empty { display: none; }
+/* Trash is pinned top-right and out of the flex flow, so only the error wraps. */
+.dz-remove { position: absolute; top: 8px; right: 8px; background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; display: inline-flex; }
 .dz-remove:hover { background: none; color: var(--err); }
 .dz-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 #upload-error { min-height: 1.2em; margin-bottom: 8px; font-size: 0.9rem; }
-#upload-progress {
-  width: 100%; height: 8px; margin-top: 10px; border: none;
-  border-radius: 999px; background: var(--surface-2); overflow: hidden;
+.dz-progress {
+  flex-basis: 100%; height: 8px; border: none;
+  border-radius: 999px; background: var(--surface); overflow: hidden;
 }
-#upload-progress::-webkit-progress-bar { background: var(--surface-2); border-radius: 999px; }
-#upload-progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
-#upload-progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
+.dz-progress[hidden] { display: none; }
+.dz-progress::-webkit-progress-bar { background: var(--surface); border-radius: 999px; }
+.dz-progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
+.dz-progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
 /* ---- Clipboard ---- */
 .clip { display: flex; gap: 10px; align-items: center; min-width: 0; }

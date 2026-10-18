@@ -18,34 +18,32 @@
     </div>
     <div class="panel panel-upload">
       <span class="panel-label">Upload a file</span>
-      <form class="upload"
-            data-max-size="{{ max_upload_size }}"
-            hx-post="/upload"
-            hx-target="#files tbody"
-            hx-swap="afterbegin"
-            hx-encoding="multipart/form-data"
-            hx-on::before-request="document.getElementById('upload-error').innerHTML=''; this.querySelector('button[type=submit]').disabled=true"
-            hx-on::after-request="this.reset()">
+      <form class="upload" data-max-size="{{ max_upload_size }}">
         <label class="dropzone">
-          <input type="file" name="upload">
+          <input type="file" name="upload" multiple>
           {{ icon('upload') }}
-          <span class="dz-title">Drop a file here, or <span class="dz-link">browse</span></span>
-          <span class="dz-hint">Maximum size: {{ max_upload_size // (1024 ** 3) }} GB</span>
+          <span class="dz-title">Drop files here, or <span class="dz-link">browse</span></span>
+          <span class="dz-hint">Maximum size: {{ max_upload_size // (1024 ** 3) }} GB each</span>
         </label>
-        <div class="dz-selected" hidden>
-          <span class="ftype">{{ icon('file') }}</span>
-          <span class="dz-file-name"></span>
-          <span class="dz-file-size"></span>
-          <button type="button" class="dz-remove" aria-label="Remove file">{{ icon('trash') }}</button>
-        </div>
-        <progress id="upload-progress" max="100" value="0" hidden></progress>
+        <ul class="dz-list" hidden></ul>
         <div class="dz-actions">
           <button type="submit" disabled>Upload</button>
         </div>
       </form>
+      <template id="dz-item-tpl">
+        <li class="dz-item">
+          <span class="ftype">{{ icon('file') }}</span>
+          <span class="dz-main">
+            <span class="dz-file-name"></span>
+            <span class="dz-status"></span>
+          </span>
+          <span class="dz-file-size"></span>
+          <button type="button" class="dz-remove" aria-label="Remove file">{{ icon('trash') }}</button>
+          <progress class="dz-progress" max="100" value="0" hidden></progress>
+        </li>
+      </template>
     </div>
   </div>
-  <div id="upload-error" class="error"></div>
 
   <div id="storage" hx-get="/usage" hx-trigger="load, filesChanged from:body"></div>
 
@@ -164,20 +162,23 @@
     htmx.ajax('POST', '/clip', { target: '#clipboard', swap: 'outerHTML', values: { snippet: text } });
   });
 
-  // Client-side size guard: reject an oversized file BEFORE the upload starts, so the
-  // user isn't made to wait for a doomed transfer. The server still enforces it too.
-  document.body.addEventListener('htmx:beforeRequest', (e) => {
-    if (!e.target.matches('.upload')) return;
-    const file = e.target.querySelector('input[type=file]').files[0];
-    const msg = !file ? 'Choose a file first' : selectionError(e.target);
-    if (msg) {
-      e.preventDefault();  // cancel the request
-      document.getElementById('upload-error').textContent = msg;
-      e.target.querySelector('button[type=submit]').disabled = false;
-    }
-  });
+  // --- Multi-file upload: staging list + sequential queue ---
+  // The <input> FileList is read-only and can't be edited to drop one file, so the
+  // staging list keeps its OWN array as the source of truth. Files are uploaded one at
+  // a time (a client-side queue): each hits the single-file /upload endpoint, so the
+  // next file's quota check sees the previous commit and there's no overshoot race.
+  const form = document.querySelector('.upload');
+  const fileInput = form.querySelector('input[type=file]');
+  const listEl = form.querySelector('.dz-list');
+  const submitBtn = form.querySelector('button[type=submit]');
+  const itemTpl = document.getElementById('dz-item-tpl');
+  const maxSize = Number(form.dataset.maxSize);
+  const gbLimit = Math.round(maxSize / 1024 ** 3);
 
-  // --- Dropzone: selected-file display, drag & drop, remove ---
+  let queue = [];      // [{id, file, status: 'queued'|'uploading'|'done'|'error', error, progress}]
+  let nextId = 0;
+  let uploading = false;
+
   function formatBytes(n) {
     if (n < 1024) return n + ' B';
     const u = ['KB', 'MB', 'GB', 'TB']; let i = -1;
@@ -200,71 +201,121 @@
     });
     return set;
   }
-  // Error message for the selected file, or null if it's OK to upload.
-  function selectionError(form) {
-    const f = form.querySelector('input[type=file]').files[0];
-    if (!f) return null;
-    const max = Number(form.dataset.maxSize);
-    if (max && f.size > max) return 'File exceeds the ' + Math.round(max / 1024 ** 3) + ' GB limit';
-    if (existingKeys().has(fileKey(f.name))) return 'A file with this name already exists';
-    return null;
+  // Flag the duplicate / oversized problems on still-queued items. A name is a dup if
+  // it's already in the table OR appears earlier in this same batch.
+  function recomputeErrors() {
+    const seen = existingKeys();
+    queue.forEach((item) => {
+      if (item.status !== 'queued') return;
+      if (maxSize && item.file.size > maxSize) {
+        item.error = 'Exceeds the ' + gbLimit + ' GB limit';
+        return;
+      }
+      const key = fileKey(item.file.name);
+      if (seen.has(key)) item.error = 'A file with this name already exists';
+      else { item.error = null; seen.add(key); }
+    });
   }
-  function validateSelection(form) {
-    const f = form.querySelector('input[type=file]').files[0];
-    const sel = form.querySelector('.dz-selected');
-    const btn = form.querySelector('button[type=submit]');
-    const err = document.getElementById('upload-error');
-    if (!f) { sel.hidden = true; btn.disabled = true; err.textContent = ''; return; }
-    form.querySelector('.dz-file-name').textContent = f.name;
-    form.querySelector('.dz-file-size').textContent = formatBytes(f.size);
-    sel.hidden = false;
-    const msg = selectionError(form);     // oversized OR duplicate -> block with message
-    err.textContent = msg || '';
-    btn.disabled = !!msg;
+
+  function render() {
+    listEl.innerHTML = '';
+    queue.forEach((item) => {
+      const li = itemTpl.content.firstElementChild.cloneNode(true);
+      li.dataset.id = item.id;
+      li.dataset.status = item.error ? 'error' : item.status;
+      li.querySelector('.dz-file-name').textContent = item.file.name;
+      li.querySelector('.dz-file-size').textContent = formatBytes(item.file.size);
+      const status = li.querySelector('.dz-status');
+      const prog = li.querySelector('.dz-progress');
+      if (item.error) status.textContent = item.error;
+      else if (item.status === 'uploading') { prog.hidden = false; prog.value = item.progress || 0; }
+      listEl.appendChild(li);
+    });
+    listEl.hidden = queue.length === 0;   // only shown when something is staged
+    const uploadable = !uploading && queue.some((i) => i.status === 'queued' && !i.error);
+    submitBtn.disabled = !uploadable;
   }
-  document.body.addEventListener('change', (e) => {
-    if (e.target.matches('.upload input[type=file]')) validateSelection(e.target.closest('.upload'));
-  });
-  document.body.addEventListener('reset', (e) => {
-    if (e.target.matches('.upload')) {
-      e.target.querySelector('.dz-selected').hidden = true;
-      e.target.querySelector('button[type=submit]').disabled = true;
+
+  function addFiles(fileList) {
+    for (const file of fileList) queue.push({ id: ++nextId, file, status: 'queued', error: null, progress: 0 });
+    recomputeErrors();
+    render();
+    fileInput.value = '';   // clear so re-picking the same file still fires 'change'
+  }
+
+  // Upload ONE file via XHR (XHR exposes upload progress, which fetch does not). The
+  // endpoint returns the new <tr> on success, or a real 4xx/5xx with a JSON {detail}.
+  function uploadOne(item) {
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      const data = new FormData();
+      data.append('upload', item.file);
+      xhr.open('POST', '/upload');   // same-origin -> auth cookie sent automatically
+      xhr.upload.addEventListener('progress', (e) => {
+        if (!e.lengthComputable) return;
+        item.progress = Math.round(e.loaded / e.total * 100);
+        const p = listEl.querySelector('.dz-item[data-id="' + item.id + '"] .dz-progress');
+        if (p) { p.hidden = false; p.value = item.progress; }
+      });
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          document.querySelector('#files tbody').insertAdjacentHTML('afterbegin', xhr.responseText);
+          localizeTimes();                       // localize the just-added row's timestamp
+          htmx.trigger(document.body, 'filesChanged');  // refresh the storage bar
+          queue = queue.filter((q) => q !== item);      // its row now lives in the table
+        } else {
+          let detail = '';
+          try { detail = JSON.parse(xhr.responseText).detail; } catch (_) {}
+          // The filename has its own column, so the message is just the reason
+          // (server details are already capitalized; capitalize the fallback too).
+          item.status = 'error';
+          item.error = detail || ('Upload failed (' + xhr.status + ')');
+        }
+        render();
+        resolve();
+      });
+      xhr.addEventListener('error', () => {
+        item.status = 'error';
+        item.error = 'Network error';
+        render();
+        resolve();
+      });
+      xhr.send(data);
+    });
+  }
+
+  async function runQueue() {
+    uploading = true;
+    render();
+    // Snapshot the good items; uploadOne mutates `queue` (removes successes) as it goes.
+    for (const item of queue.filter((i) => i.status === 'queued' && !i.error)) {
+      item.status = 'uploading';
+      render();
+      await uploadOne(item);
     }
-  }, true);  // 'reset' doesn't bubble -> capture phase
-  document.addEventListener('click', (e) => {
+    uploading = false;
+    render();
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!uploading) runQueue();
+  });
+  fileInput.addEventListener('change', () => addFiles(fileInput.files));
+  listEl.addEventListener('click', (e) => {
     const rm = e.target.closest('.dz-remove');
     if (!rm) return;
-    const form = rm.closest('.upload');
-    form.querySelector('input[type=file]').value = '';
-    validateSelection(form);
+    const id = Number(rm.closest('.dz-item').dataset.id);
+    queue = queue.filter((i) => i.id !== id);
+    recomputeErrors();
+    render();
   });
   document.querySelectorAll('.dropzone').forEach((dz) => {
-    const input = dz.querySelector('input[type=file]');
     ['dragover', 'dragenter'].forEach((ev) =>
       dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('dragover'); }));
     ['dragleave', 'dragend', 'drop'].forEach((ev) =>
       dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('dragover'); }));
-    dz.addEventListener('drop', (e) => {
-      if (e.dataTransfer.files.length) {
-        input.files = e.dataTransfer.files;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    });
-  });
-
-  // Upload progress bar. HTMX fires htmx:xhr:progress on the uploading form as bytes go up.
-  const uploadProgress = document.getElementById('upload-progress');
-  document.body.addEventListener('htmx:xhr:progress', (e) => {
-    if (!e.target.matches('.upload')) return;
-    uploadProgress.hidden = false;
-    if (e.detail.lengthComputable) {
-      uploadProgress.value = Math.round(e.detail.loaded / e.detail.total * 100);
-    }
-  });
-  document.body.addEventListener('htmx:afterRequest', (e) => {
-    if (!e.target.matches('.upload')) return;
-    uploadProgress.hidden = true;
-    uploadProgress.value = 0;
+    dz.addEventListener('drop', (e) => { if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
   });
 </script>
 {% endblock %}
