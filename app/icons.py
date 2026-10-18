@@ -29,6 +29,12 @@ _PATHS = {
               '<path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>',
     "trash": '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>'
              '<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/>',
+    # Chevron points UP (ascending); the ".desc" CSS class rotates it 180deg for descending.
+    "chevron": '<path d="m18 15-6-6-6 6"/>',
+    # Horizontal "more" dots for the row action (kebab) button. Filled so they read as dots.
+    "more": '<circle cx="5" cy="12" r="1.6" fill="currentColor"/>'
+            '<circle cx="12" cy="12" r="1.6" fill="currentColor"/>'
+            '<circle cx="19" cy="12" r="1.6" fill="currentColor"/>',
 }
 
 

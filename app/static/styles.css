@@ -211,9 +211,11 @@ form.login {
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; user-select: none; cursor: pointer; }
+th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; user-select: none; cursor: pointer; white-space: nowrap; }
 th.sorted { color: var(--fg); }
-th .arrow { font-size: 0.7em; margin-left: 4px; visibility: hidden; }
+th .arrow { display: inline-flex; vertical-align: middle; margin-left: 4px; visibility: hidden; }
+th .arrow .icon { width: 14px; height: 14px; }
+th .arrow.desc .icon { transform: rotate(180deg); }
 th.sorted .arrow { visibility: visible; }
 tbody tr { transition: background .12s; }
 tbody tr:hover { background: var(--surface-2); }
@@ -221,9 +223,12 @@ tbody tr:hover { background: var(--surface-2); }
 .icon { width: 18px; height: 18px; display: inline-block; vertical-align: middle; flex-shrink: 0; }
 /* Sizes + dates in mono for a precise, premium feel. */
 td[data-size], td[data-ts] { font-family: var(--font-mono); font-size: 0.88rem; color: var(--muted); }
+/* Give Type/Size breathing room and keep the size value on one line (e.g. "12.3 kB"). */
+th.col-type, td.col-type { min-width: 4rem; }
+td[data-size] { white-space: nowrap; min-width: 5rem; }
 
 td.actions { text-align: right; width: 1%; white-space: nowrap; }
-.kebab { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.3rem; line-height: 1; padding: 0 6px; }
+.kebab { display: inline-flex; align-items: center; background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 6px; }
 .kebab:hover { background: none; color: var(--fg); }
 .menu {
   position: fixed; background: var(--surface); border: 1px solid var(--border);
@@ -256,7 +261,8 @@ td.actions { text-align: right; width: 1%; white-space: nowrap; }
   #files tr:hover { background: var(--surface); }
   #files td { border: none; padding: 0; }
   #files td:first-child { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #files td.col-type, #files td[data-size], #files td[data-ts] { display: inline; color: var(--muted); font-size: 0.82rem; }
-  #files td[data-size]::before, #files td[data-ts]::before { content: " · "; font-family: var(--font); }
+  #files td.col-type, #files td[data-size] { display: inline; color: var(--muted); font-size: 0.82rem; }
+  #files td[data-size]::before { content: " · "; font-family: var(--font); }
+  #files td[data-ts] { display: block; margin-top: 2px; color: var(--muted); font-size: 0.82rem; }  /* date on its own line */
   #files td.actions { position: absolute; top: 8px; right: 8px; width: auto; padding: 0; }
 }

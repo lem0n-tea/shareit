@@ -51,10 +51,10 @@
   <table id="files">
     <thead>
       <tr>
-        <th>Name <span class="arrow">▲</span></th>
-        <th class="col-type">Type <span class="arrow">▲</span></th>
-        <th>Size <span class="arrow">▲</span></th>
-        <th>Uploaded <span class="arrow">▲</span></th>
+        <th>Name <span class="arrow">{{ icon('chevron') }}</span></th>
+        <th class="col-type">Type <span class="arrow">{{ icon('chevron') }}</span></th>
+        <th>Size <span class="arrow">{{ icon('chevron') }}</span></th>
+        <th>Uploaded <span class="arrow">{{ icon('chevron') }}</span></th>
         <th></th>
       </tr>
     </thead>
@@ -93,7 +93,7 @@
       // their reserved width, so nothing resizes when the sort column changes.
       headers.forEach(h => h.classList.remove('sorted'));
       th.classList.add('sorted');
-      th.querySelector('.arrow').textContent = asc ? '▲' : '▼';
+      th.querySelector('.arrow').classList.toggle('desc', !asc);  // rotate chevron down for descending
     });
   });
 
