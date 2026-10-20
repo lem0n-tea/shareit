@@ -222,6 +222,9 @@ form.login {
 /* ---- File table ---- */
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
+/* Fixed layout: column widths are set here, not derived from each page's content,
+   so nothing drifts or resizes when you change the sort column or direction. */
+#files { table-layout: fixed; }
 th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; user-select: none; cursor: pointer; white-space: nowrap; }
 th.sorted { color: var(--fg); }
@@ -235,11 +238,16 @@ tbody tr:hover { background: var(--surface-2); }
 .icon { width: 18px; height: 18px; display: inline-block; vertical-align: middle; flex-shrink: 0; }
 /* Sizes + dates in mono for a precise, premium feel. */
 td[data-size], td[data-ts] { font-family: var(--font-mono); font-size: 0.88rem; color: var(--muted); }
-/* Give Type/Size breathing room and keep the size value on one line (e.g. "12.3 kB"). */
-th.col-type, td.col-type { min-width: 4rem; }
-td[data-size] { white-space: nowrap; min-width: 5rem; }
+/* Per-column widths (set on the header row). Name has no width, so it takes the
+   remaining space and ellipsizes long names; the rest stay fixed. */
+#files thead th:nth-child(2) { width: 100px; }   /* Type */
+#files thead th:nth-child(3) { width: 120px; }   /* Size */
+#files thead th:nth-child(4) { width: 220px; }   /* Uploaded */
+#files thead th:nth-child(5) { width: 52px; }    /* Actions */
+#files td[data-size], #files td[data-ts] { white-space: nowrap; }
+#files tbody td:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-td.actions { text-align: right; width: 1%; white-space: nowrap; }
+td.actions { text-align: right; white-space: nowrap; }
 .kebab { display: inline-flex; align-items: center; background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 6px; }
 .kebab:hover { background: none; color: var(--fg); }
 .menu {
