@@ -65,39 +65,106 @@
     </tbody>
   </table>
   </div>
+  <div class="load-more-wrap">
+    <button id="load-more" class="btn-ghost" type="button" {% if not has_more %}hidden{% endif %}>Load more</button>
+  </div>
 </main>
 
 <script>
-  // Minimal client-side column sort with an active-column highlight + direction arrow.
-  // Numeric columns use data-size (bytes) and dates use data-ts (ISO string, which
-  // sorts chronologically), so they order correctly rather than as display text.
+  // --- Pagination + server-side sorting (keyset) ---
+  // Sorting now happens on the server; clicking a header re-queries from page 1, and
+  // "Load more" fetches the next keyset page. We track the active sort here and read the
+  // cursor off the last row (we never insert anything below it, so it's always a server row).
   const headers = document.querySelectorAll('#files thead th');
-  const dir = {};  // column index -> ascending? (persists per column)
+  const SORT_KEYS = ['name', 'type', 'size', 'uploaded_at'];
+  const tbody = document.querySelector('#files tbody');
+  const loadMoreBtn = document.getElementById('load-more');
+  let sortBy = 'uploaded_at';
+  let sortDir = 'desc';
+  let loadingPage = false;
 
+  // The active-sort value of a row, as a string — matches what the server cursor expects.
+  function rowSortValue(row) {
+    const nameTd = row.querySelector('td[data-name]');
+    if (sortBy === 'name') return nameTd.dataset.name;
+    if (sortBy === 'type') return nameTd.dataset.ext || '';
+    if (sortBy === 'size') return row.querySelector('td[data-size]').dataset.size;
+    return row.querySelector('td[data-ts]').dataset.ts;   // uploaded_at
+  }
+  // <0 if (aVal,aId) should appear before (bVal,bId) in the CURRENT sort order. Mirrors
+  // the server's ORDER BY (sort column, then id) with the same direction.
+  function compareInOrder(aVal, aId, bVal, bId) {
+    let av = aVal, bv = bVal;
+    if (sortBy === 'size') { av = +aVal; bv = +bVal; }   // numeric; others compare as text
+    let base = av < bv ? -1 : av > bv ? 1 : 0;
+    if (base === 0) base = (+aId < +bId ? -1 : +aId > +bId ? 1 : 0);
+    return sortDir === 'desc' ? -base : base;
+  }
+
+  // Fetch a page. reset=true replaces the body (after a re-sort); otherwise append the
+  // next keyset page, using the last row as the cursor.
+  async function fetchPage(reset) {
+    if (loadingPage) return;
+    loadingPage = true;
+    loadMoreBtn.disabled = true;
+    const params = new URLSearchParams({ sort: sortBy, direction: sortDir });
+    if (!reset) {
+      const last = tbody.querySelector('tr:last-child');
+      if (last) { params.set('after_value', rowSortValue(last)); params.set('after_id', last.dataset.id); }
+    }
+    try {
+      const resp = await fetch('/files-page?' + params.toString());
+      if (!resp.ok) return;
+      const html = await resp.text();
+      if (reset) tbody.innerHTML = html; else tbody.insertAdjacentHTML('beforeend', html);
+      localizeTimes();
+      loadMoreBtn.hidden = resp.headers.get('X-Has-More') !== '1';
+    } finally {
+      loadingPage = false;
+      loadMoreBtn.disabled = false;
+    }
+  }
+
+  // Place a freshly uploaded row at its correct spot for the current sort. If it belongs
+  // below the last loaded row, only append it when everything is already shown (no "Load
+  // more"); otherwise skip it — it lives in an unloaded page and arrives via "Load more".
+  function insertUploadedRow(html) {
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = html.trim();
+    const newRow = tmp.firstElementChild;
+    if (!newRow) return;
+    const nVal = rowSortValue(newRow), nId = newRow.dataset.id;
+    for (const row of tbody.querySelectorAll('tr')) {
+      if (compareInOrder(nVal, nId, rowSortValue(row), row.dataset.id) < 0) {
+        tbody.insertBefore(newRow, row);
+        return;
+      }
+    }
+    if (loadMoreBtn.hidden) tbody.appendChild(newRow);   // nothing more to load -> it goes last
+  }
+
+  // Header click: re-sort on the server (resets to page 1). The same column toggles
+  // direction; a new column starts descending for time, ascending otherwise.
   headers.forEach((th, idx) => {
-    if (idx >= 4) return;            // skip the actions column
+    if (idx >= SORT_KEYS.length) return;   // skip the actions column
     th.addEventListener('click', () => {
-      const asc = (dir[idx] = !dir[idx]);   // first click: !undefined === true (ascending)
-
-      const tbody = document.querySelector('#files tbody');
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      rows.sort((a, b) => {
-        const ca = a.children[idx], cb = b.children[idx];
-        const numeric = ca.dataset.size !== undefined;
-        let va = ca.dataset.size ?? ca.dataset.ts ?? ca.dataset.name ?? ca.textContent.trim().toLowerCase();
-        let vb = cb.dataset.size ?? cb.dataset.ts ?? cb.dataset.name ?? cb.textContent.trim().toLowerCase();
-        if (numeric) { va = +va; vb = +vb; }
-        return (va < vb ? -1 : va > vb ? 1 : 0) * (asc ? 1 : -1);
-      });
-      rows.forEach(r => tbody.appendChild(r));
-
-      // Highlight this column. CSS hides the other columns' arrows, but they keep
-      // their reserved width, so nothing resizes when the sort column changes.
-      headers.forEach(h => h.classList.remove('sorted'));
+      const key = SORT_KEYS[idx];
+      if (sortBy === key) sortDir = (sortDir === 'asc' ? 'desc' : 'asc');
+      else { sortBy = key; sortDir = (key === 'uploaded_at' ? 'desc' : 'asc'); }
+      headers.forEach((h) => h.classList.remove('sorted'));
       th.classList.add('sorted');
-      th.querySelector('.arrow').classList.toggle('desc', !asc);  // rotate chevron down for descending
+      th.querySelector('.arrow').classList.toggle('desc', sortDir === 'desc');
+      fetchPage(true);
     });
   });
+  loadMoreBtn.addEventListener('click', () => fetchPage(false));
+
+  // Reflect the initial server sort (uploaded_at, newest first) in the header.
+  (function () {
+    const th = headers[SORT_KEYS.indexOf('uploaded_at')];
+    th.classList.add('sorted');
+    th.querySelector('.arrow').classList.add('desc');
+  })();
 
   // Convert the UTC timestamps to the viewer's local time + locale format. The cell's
   // data-ts holds the source UTC ISO string, so this is idempotent and safe to re-run
@@ -261,10 +328,10 @@
       });
       xhr.addEventListener('load', () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          document.querySelector('#files tbody').insertAdjacentHTML('afterbegin', xhr.responseText);
+          insertUploadedRow(xhr.responseText);   // place it per the active sort (or defer to load-more)
           localizeTimes();                       // localize the just-added row's timestamp
           htmx.trigger(document.body, 'filesChanged');  // refresh the storage bar
-          queue = queue.filter((q) => q !== item);      // its row now lives in the table
+          queue = queue.filter((q) => q !== item);      // handled -> drop from the staging list
         } else {
           let detail = '';
           try { detail = JSON.parse(xhr.responseText).detail; } catch (_) {}

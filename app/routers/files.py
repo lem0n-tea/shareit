@@ -1,6 +1,7 @@
 import os
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import get_db
 from app.security import get_current_user
-from app.services import STORAGE_DIR, get_file_or_404, remove_file, save_upload
+from app.services import STORAGE_DIR, get_file_list, get_file_or_404, remove_file, save_upload
 
 router = APIRouter(
     prefix="/files", tags=["files"], dependencies=[Depends(get_current_user)]
@@ -35,11 +36,34 @@ async def download_file(file_id: int, db: Session = Depends(get_db)):
     filename = f"{file.name}.{file.extension}" if file.extension else file.name
     return FileResponse(path=filepath, filename=filename, media_type=file.content_type)
 
+@router.get("", response_model=schemas.FilePage)
+async def list_files(
+    db: Session = Depends(get_db),
+    sort: Literal["name", "type", "size", "uploaded_at"] = "uploaded_at",
+    direction: Literal["asc", "desc"] = "desc",
+    limit: Annotated[int, Query(gt=1, le=100)] = 10,
+    after_value: str | None = None,
+    after_id: int | None = None
+):
+    if (after_value is None) != (after_id is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="after_value and after_id must be set together"
+        )
 
-@router.get("", response_model=list[schemas.FileOut])
-async def list_files(db: Session = Depends(get_db)):
-    return db.scalars(select(models.File)).all()
+    files, total = await get_file_list(
+        db,
+        sort=sort,
+        direction=direction,
+        after_value=after_value,
+        after_id=after_id,
+        limit=limit,
+    )
 
+    return schemas.FilePage(
+        items=files,
+        total=total
+    )
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_file(file_id: int, db: Session = Depends(get_db)):

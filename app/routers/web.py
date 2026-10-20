@@ -18,6 +18,7 @@ from app.security import (
     verify_password,
 )
 from app.services import (
+    get_file_list,
     get_file_or_404,
     get_usage,
     read_clipboard,
@@ -27,6 +28,9 @@ from app.services import (
 )
 
 router = APIRouter(tags=["web"])
+
+# How many file rows one page (initial load or "load more") returns.
+PAGE_SIZE = 10
 
 # Templates live in app/templates. The path is relative to the process CWD, which is
 # the project root locally and /app in the container -- both resolve to app/templates.
@@ -88,19 +92,49 @@ def _set_auth_cookies(response: Response, user: models.User) -> None:
 
 
 @router.get("/", response_class=HTMLResponse)
-def home(request: Request, db: Session = Depends(get_db)):
+async def home(request: Request, db: Session = Depends(get_db)):
     user = _user_from_cookie(request, db)
     if not user:
         return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-    files = db.scalars(
-        select(models.File).order_by(models.File.uploaded_at.desc())
-    ).all()
+    # First page, default sort (newest first). Fetch one extra to know if more remain.
+    files, _ = await get_file_list(
+        db, sort="uploaded_at", direction="desc",
+        after_value=None, after_id=None, limit=PAGE_SIZE + 1,
+    )
+    has_more = len(files) > PAGE_SIZE
+    files = files[:PAGE_SIZE]
     clipboard = read_clipboard(db)
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"files": files, "clipboard": clipboard, "max_upload_size": settings.max_upload_size},
+        {
+            "files": files, "has_more": has_more,
+            "clipboard": clipboard, "max_upload_size": settings.max_upload_size,
+        },
     )
+
+
+@router.get("/files-page", response_class=HTMLResponse)
+async def files_page(
+    request: Request,
+    sort: str = "uploaded_at",
+    direction: str = "desc",
+    after_value: str | None = None,
+    after_id: int | None = None,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Next page of file rows for the client's keyset "load more" / re-sort.
+    Returns just the <tr> rows; X-Has-More tells the client whether to keep the button."""
+    files, _ = await get_file_list(
+        db, sort=sort, direction=direction,
+        after_value=after_value, after_id=after_id, limit=PAGE_SIZE + 1,
+    )
+    has_more = len(files) > PAGE_SIZE
+    files = files[:PAGE_SIZE]
+    resp = templates.TemplateResponse(request, "_rows.html", {"files": files})
+    resp.headers["X-Has-More"] = "1" if has_more else "0"
+    return resp
 
 
 @router.get("/login", response_class=HTMLResponse)

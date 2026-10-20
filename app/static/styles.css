@@ -120,6 +120,9 @@ button:disabled { opacity: .55; cursor: default; }
   background: var(--surface); color: var(--fg); border: 1px solid var(--border);
 }
 .btn-ghost:hover { background: var(--surface-2); border-color: var(--muted); }
+.btn-ghost[hidden] { display: none; }   /* beat the display:inline-flex above */
+
+.load-more-wrap { display: flex; justify-content: center; margin-top: 16px; }
 
 /* ---- Inputs ---- */
 input {

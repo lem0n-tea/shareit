@@ -5,9 +5,11 @@ import mimetypes
 import os
 import shutil
 import uuid
+import operator
+from datetime import datetime
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,18 @@ os.makedirs(STORAGE_DIR, exist_ok=True)
 # Capacity: the configured limit, or the whole disk if none is set.
 STORAGE_LIMIT = settings.storage_limit or shutil.disk_usage(STORAGE_DIR).total
 
+SORT_COLUMNS = {
+    "name": models.File.name,
+    "type": func.coalesce(models.File.extension, ""),
+    "size": models.File.size,
+    "uploaded_at": models.File.uploaded_at
+}
+TYPE_CAST_MAP = {
+    "name": str,
+    "type": str,
+    "size": int,
+    "uploaded_at": datetime.fromisoformat
+}
 
 async def save_upload(
     upload: UploadFile, db: Session, content_length: str | None = None
@@ -121,6 +135,48 @@ def set_clipboard(snippet: str, db: Session) -> models.Clipboard:
     db.refresh(row)
     return row
 
+async def get_file_list(db: Session, *, sort: str, direction: str,
+                        after_value=None, after_id=None, limit: int) -> tuple[list[models.File], int]:
+    if SORT_COLUMNS.get(sort) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid sort column name"
+        )
+
+    sort_column = SORT_COLUMNS.get(sort)
+    sort_id = models.File.id
+
+    if direction.lower() == "asc":
+        order_column = sort_column.asc()
+        order_id = sort_id.asc()
+        op = operator.gt
+    elif direction.lower() == "desc":
+        order_column = sort_column.desc()
+        order_id = sort_id.desc()
+        op = operator.lt
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid ordering direction"
+        )
+
+    stmt = select(models.File).order_by(order_column, order_id).limit(limit)
+
+    if after_value is not None and after_id is not None:
+        try:
+            after_value = TYPE_CAST_MAP.get(sort)(after_value)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"after_value is not a valid {sort} value"
+            )
+        
+        stmt = stmt.where(op(tuple_(sort_column, sort_id), (after_value, after_id)))
+
+    files = db.scalars(stmt).all()
+    total = db.scalar(select(func.count(models.File.id)))
+
+    return files, total
 
 def get_file_or_404(file_id: int, db: Session) -> models.File:
     file = db.scalars(select(models.File).where(models.File.id == file_id)).first()

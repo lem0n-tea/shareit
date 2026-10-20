@@ -17,6 +17,10 @@ class FileOut(BaseModel):
     size: int
     uploaded_at: datetime
 
+class FilePage(BaseModel):
+    items: list[FileOut]
+    total: int
+
 class ClipboardIn(BaseModel):
     snippet: str = Field(max_length=10000, default="")
 

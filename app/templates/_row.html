@@ -1,4 +1,4 @@
-<tr>
+<tr data-id="{{ file.id }}">
   <td data-name="{{ file.name | lower }}" data-ext="{{ (file.extension or '') | lower }}"><span class="ftype">{{ file.content_type | file_icon }}</span>{{ file.name }}</td>
   <td class="col-type">{{ (file.extension | upper) if file.extension else "—" }}</td>
   <td data-size="{{ file.size }}">{{ file.size | filesizeformat }}</td>
