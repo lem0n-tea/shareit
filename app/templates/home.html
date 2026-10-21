@@ -13,41 +13,27 @@
   </div>
 </header>
 <main>
-  <div class="top-bar">
-    <div class="panel panel-clip">
-      <span class="panel-label">Share clipboard between devices</span>
-      {% include "_clipboard.html" %}
+  <div class="toolbar">
+    <input id="file-input" type="file" name="upload" multiple hidden data-max-size="{{ max_upload_size }}">
+    <button class="btn upload-btn" type="button">{{ icon('upload') }}<span>Upload</span></button>
+    <div class="clip-wrap">
+      <button class="btn-ghost clip-btn" type="button" aria-expanded="false">{{ icon('copy') }}<span>Clipboard</span></button>
+      <div class="clip-popover" hidden>
+        <span class="panel-label">Share clipboard between devices</span>
+        {% include "_clipboard.html" %}
+      </div>
     </div>
-    <div class="panel panel-upload">
-      <span class="panel-label">Upload a file</span>
-      <form class="upload" data-max-size="{{ max_upload_size }}">
-        <label class="dropzone">
-          <input type="file" name="upload" multiple>
-          {{ icon('upload') }}
-          <span class="dz-title">Drop files here, or <span class="dz-link">browse</span></span>
-          <span class="dz-hint">Maximum size: {{ max_upload_size // (1024 ** 3) }} GB each</span>
-        </label>
-        <ul class="dz-list" hidden></ul>
-        <div class="dz-actions">
-          <button type="submit" disabled>Upload</button>
-        </div>
-      </form>
-      <template id="dz-item-tpl">
-        <li class="dz-item">
-          <span class="ftype">{{ icon('file') }}</span>
-          <span class="dz-main">
-            <span class="dz-file-name"></span>
-            <span class="dz-status"></span>
-          </span>
-          <span class="dz-file-size"></span>
-          <button type="button" class="dz-remove" aria-label="Remove file">{{ icon('trash') }}</button>
-          <progress class="dz-progress" max="100" value="0" hidden></progress>
-        </li>
-      </template>
-    </div>
+    <div id="storage" class="storage-slot" hx-get="/usage" hx-trigger="load, filesChanged from:body"></div>
   </div>
 
-  <div id="storage" hx-get="/usage" hx-trigger="load, filesChanged from:body"></div>
+  <div class="selection-bar" hidden>
+    <button class="sel-close" type="button" aria-label="Clear selection">{{ icon('close') }}</button>
+    <span class="sel-count">0 selected</span>
+    <div class="sel-actions">
+      <button class="sel-download" type="button" aria-label="Download">{{ icon('download') }}</button>
+      <button class="sel-delete" type="button" aria-label="Delete">{{ icon('trash') }}</button>
+    </div>
+  </div>
 
   <div class="table-wrap">
   <table id="files">
@@ -57,18 +43,39 @@
         <th class="col-type">Type <span class="arrow">{{ icon('chevron') }}</span></th>
         <th>Size <span class="arrow">{{ icon('chevron') }}</span></th>
         <th>Uploaded <span class="arrow">{{ icon('chevron') }}</span></th>
-        <th></th>
       </tr>
     </thead>
     <tbody>
       {% for file in files %}{% include "_row.html" %}{% endfor %}
     </tbody>
   </table>
-  </div>
   <div class="load-more-wrap">
     <button id="load-more" class="btn-ghost" type="button" {% if not has_more %}hidden{% endif %}>Load more</button>
   </div>
+  </div>
 </main>
+
+<!-- Upload activity popup (Drive-style): appears only while there are files to show. -->
+<div id="upload-popup" hidden>
+  <div class="up-head">
+    <span class="up-title">Uploads</span>
+    <button class="up-close" type="button" aria-label="Close">{{ icon('close') }}</button>
+  </div>
+  <ul class="up-list"></ul>
+</div>
+<template id="dz-item-tpl">
+  <li class="dz-item">
+    <span class="ftype">{{ icon('file') }}</span>
+    <span class="dz-main">
+      <span class="dz-file-name"></span>
+      <span class="dz-status"></span>
+    </span>
+    <span class="dz-file-size"></span>
+    <span class="dz-check">{{ icon('check') }}</span>
+    <button type="button" class="dz-remove" aria-label="Remove file">{{ icon('trash') }}</button>
+    <progress class="dz-progress" max="100" value="0" hidden></progress>
+  </li>
+</template>
 
 <script>
   // --- Pagination + server-side sorting (keyset) ---
@@ -116,7 +123,7 @@
       const resp = await fetch('/files-page?' + params.toString());
       if (!resp.ok) return;
       const html = await resp.text();
-      if (reset) tbody.innerHTML = html; else tbody.insertAdjacentHTML('beforeend', html);
+      if (reset) { tbody.innerHTML = html; clearSelection(); } else tbody.insertAdjacentHTML('beforeend', html);
       localizeTimes();
       loadMoreBtn.hidden = resp.headers.get('X-Has-More') !== '1';
     } finally {
@@ -180,25 +187,58 @@
   localizeTimes();
   document.body.addEventListener('htmx:afterSettle', localizeTimes);
 
-  // Row action menu (kebab "⋯"). The menu is position:fixed, so it floats above the
-  // scrollable table instead of being clipped by it; we anchor it to the button on open.
-  function closeMenus() {
-    document.querySelectorAll('#files .menu').forEach(m => { m.hidden = true; });
+  // --- File selection + top action bar (replaces the per-row menu) ---
+  const selected = new Set();   // selected file ids (as strings)
+  const selectionBar = document.querySelector('.selection-bar');
+  const selCount = selectionBar.querySelector('.sel-count');
+  const selDownloadBtn = selectionBar.querySelector('.sel-download');
+
+  function updateSelectionUI() {
+    const n = selected.size;
+    selectionBar.hidden = n === 0;      // the bar sits above the column headers
+    if (n > 0) selCount.textContent = n + ' selected';
+    selDownloadBtn.disabled = n !== 1;  // download is single-file only (no zip yet)
   }
-  document.addEventListener('click', (e) => {
-    const kebab = e.target.closest('.kebab');
-    const menu = kebab ? kebab.nextElementSibling : null;
-    const wasOpen = menu && !menu.hidden;
-    closeMenus();                                 // any click first closes open menus
-    if (kebab && !wasOpen) {                       // clicking a closed kebab opens it
-      menu.hidden = false;
-      const r = kebab.getBoundingClientRect();
-      menu.style.top = (r.bottom + 4) + 'px';
-      menu.style.left = (r.right - menu.offsetWidth) + 'px';   // right-aligned to the button
-    }
+  function clearSelection() {
+    tbody.querySelectorAll('tr.selected').forEach((r) => r.classList.remove('selected'));
+    selected.clear();
+    updateSelectionUI();
+  }
+
+  // Click a row to toggle its selection.
+  tbody.addEventListener('click', (e) => {
+    const row = e.target.closest('tr');
+    if (!row || !row.dataset.id) return;
+    const id = row.dataset.id;
+    if (selected.has(id)) { selected.delete(id); row.classList.remove('selected'); }
+    else { selected.add(id); row.classList.add('selected'); }
+    updateSelectionUI();
   });
-  // Close the menu if the page/table scrolls (its anchor would otherwise drift).
-  window.addEventListener('scroll', closeMenus, true);
+  document.querySelector('.sel-close').addEventListener('click', clearSelection);
+
+  // Download the single selected file (temporary anchor so the page doesn't navigate away).
+  selDownloadBtn.addEventListener('click', () => {
+    if (selected.size !== 1) return;
+    const a = document.createElement('a');
+    a.href = '/files/' + [...selected][0] + '/download';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // Bulk delete via the cookie-authed DELETE /files?ids=... (the JSON endpoint accepts the cookie).
+  document.querySelector('.sel-delete').addEventListener('click', async () => {
+    if (!selected.size) return;
+    if (!confirm('Delete ' + selected.size + (selected.size === 1 ? ' file?' : ' files?'))) return;
+    const params = new URLSearchParams();
+    selected.forEach((id) => params.append('ids', id));
+    const resp = await fetch('/files?' + params.toString(), { method: 'DELETE' });
+    if (!resp.ok) return;
+    selected.forEach((id) => {
+      const row = tbody.querySelector('tr[data-id="' + id + '"]');
+      if (row) row.remove();
+    });
+    clearSelection();
+    htmx.trigger(document.body, 'filesChanged');   // refresh the storage bar
+  });
 
   // Copy the shared snippet to the device clipboard. (Clipboard API needs a secure
   // context — HTTPS in production, localhost in dev — both of which we have.)
@@ -231,22 +271,20 @@
     htmx.ajax('POST', '/clip', { target: '#clipboard', swap: 'outerHTML', values: { snippet: text } });
   });
 
-  // --- Multi-file upload: staging list + sequential queue ---
-  // The <input> FileList is read-only and can't be edited to drop one file, so the
-  // staging list keeps its OWN array as the source of truth. Files are uploaded one at
-  // a time (a client-side queue): each hits the single-file /upload endpoint, so the
-  // next file's quota check sees the previous commit and there's no overshoot race.
-  const form = document.querySelector('.upload');
-  const fileInput = form.querySelector('input[type=file]');
-  const listEl = form.querySelector('.dz-list');
-  const submitBtn = form.querySelector('button[type=submit]');
+  // --- Upload: pick or drop files -> auto-upload, with a Drive-style activity popup ---
+  const fileInput = document.getElementById('file-input');
+  const uploadBtn = document.querySelector('.upload-btn');
+  const popup = document.getElementById('upload-popup');
+  const upList = popup.querySelector('.up-list');
+  const upTitle = popup.querySelector('.up-title');
   const itemTpl = document.getElementById('dz-item-tpl');
-  const maxSize = Number(form.dataset.maxSize);
+  const maxSize = Number(fileInput.dataset.maxSize);
   const gbLimit = Math.round(maxSize / 1024 ** 3);
 
-  let queue = [];      // [{id, file, status: 'queued'|'uploading'|'done'|'error', error, progress}]
+  let queue = [];   // [{id, file, status: 'queued'|'uploading'|'done'|'error', error, progress}]
   let nextId = 0;
   let uploading = false;
+  let autoCloseTimer = null;
 
   function formatBytes(n) {
     if (n < 1024) return n + ' B';
@@ -254,15 +292,13 @@
     do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
     return n.toFixed(n < 10 ? 1 : 0) + ' ' + u[i];
   }
-  // Parse a filename into a lowercased "base<SEP>ext" key, matching the server's
-  // os.path.splitext rule (a leading dot is part of the name, not an extension).
   function fileKey(filename) {
     const dot = filename.lastIndexOf('.');
     const base = dot > 0 ? filename.slice(0, dot) : filename;
     const ext = dot > 0 ? filename.slice(dot + 1) : '';
     return base.toLowerCase() + '\u0000' + ext.toLowerCase();
   }
-  // Keys (name + extension) of the files already shown in the table.
+  // Names already in the loaded table, for a client-side duplicate pre-check.
   function existingKeys() {
     const set = new Set();
     document.querySelectorAll('#files td[data-name]').forEach((td) => {
@@ -270,24 +306,14 @@
     });
     return set;
   }
-  // Flag the duplicate / oversized problems on still-queued items. A name is a dup if
-  // it's already in the table OR appears earlier in this same batch.
-  function recomputeErrors() {
-    const seen = existingKeys();
-    queue.forEach((item) => {
-      if (item.status !== 'queued') return;
-      if (maxSize && item.file.size > maxSize) {
-        item.error = 'Exceeds the ' + gbLimit + ' GB limit';
-        return;
-      }
-      const key = fileKey(item.file.name);
-      if (seen.has(key)) item.error = 'A file with this name already exists';
-      else { item.error = null; seen.add(key); }
-    });
+  function validate(file, seen) {
+    if (maxSize && file.size > maxSize) return 'Exceeds the ' + gbLimit + ' GB limit';
+    if (seen.has(fileKey(file.name))) return 'A file with this name already exists';
+    return null;
   }
 
-  function render() {
-    listEl.innerHTML = '';
+  function renderPopup() {
+    upList.innerHTML = '';
     queue.forEach((item) => {
       const li = itemTpl.content.firstElementChild.cloneNode(true);
       li.dataset.id = item.id;
@@ -298,22 +324,36 @@
       const prog = li.querySelector('.dz-progress');
       if (item.error) status.textContent = item.error;
       else if (item.status === 'uploading') { prog.hidden = false; prog.value = item.progress || 0; }
-      listEl.appendChild(li);
+      upList.appendChild(li);
     });
-    listEl.hidden = queue.length === 0;   // only shown when something is staged
-    const uploadable = !uploading && queue.some((i) => i.status === 'queued' && !i.error);
-    submitBtn.disabled = !uploadable;
+    const done = queue.filter((i) => i.status === 'done').length;
+    const failed = queue.filter((i) => i.error).length;
+    upTitle.textContent = uploading ? 'Uploading…'
+      : failed ? done + ' done, ' + failed + ' failed'
+      : done + (done === 1 ? ' upload complete' : ' uploads complete');
+  }
+  function showPopup() { clearTimeout(autoCloseTimer); popup.hidden = false; }
+  function closePopup() { popup.hidden = true; queue = []; renderPopup(); }
+  // Auto-close shortly after a clean finish; stay open if anything failed.
+  function maybeAutoClose() {
+    if (uploading || queue.some((i) => i.error)) return;
+    autoCloseTimer = setTimeout(closePopup, 4000);
   }
 
   function addFiles(fileList) {
-    for (const file of fileList) queue.push({ id: ++nextId, file, status: 'queued', error: null, progress: 0 });
-    recomputeErrors();
-    render();
-    fileInput.value = '';   // clear so re-picking the same file still fires 'change'
+    const seen = existingKeys();
+    for (const file of fileList) {
+      const err = validate(file, seen);
+      if (!err) seen.add(fileKey(file.name));   // also catches dupes within this same batch
+      queue.push({ id: ++nextId, file, status: err ? 'error' : 'queued', error: err, progress: 0 });
+    }
+    showPopup();
+    renderPopup();
+    runQueue();
+    fileInput.value = '';   // allow re-picking the same file
   }
 
-  // Upload ONE file via XHR (XHR exposes upload progress, which fetch does not). The
-  // endpoint returns the new <tr> on success, or a real 4xx/5xx with a JSON {detail}.
+  // Upload ONE file via XHR (XHR exposes upload progress; fetch doesn't).
   function uploadOne(item) {
     return new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
@@ -323,68 +363,82 @@
       xhr.upload.addEventListener('progress', (e) => {
         if (!e.lengthComputable) return;
         item.progress = Math.round(e.loaded / e.total * 100);
-        const p = listEl.querySelector('.dz-item[data-id="' + item.id + '"] .dz-progress');
+        const p = upList.querySelector('.dz-item[data-id="' + item.id + '"] .dz-progress');
         if (p) { p.hidden = false; p.value = item.progress; }
       });
       xhr.addEventListener('load', () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          insertUploadedRow(xhr.responseText);   // place it per the active sort (or defer to load-more)
-          localizeTimes();                       // localize the just-added row's timestamp
-          htmx.trigger(document.body, 'filesChanged');  // refresh the storage bar
-          queue = queue.filter((q) => q !== item);      // handled -> drop from the staging list
+          insertUploadedRow(xhr.responseText);   // place per active sort (or defer to load-more)
+          localizeTimes();
+          htmx.trigger(document.body, 'filesChanged');   // refresh the storage donut
+          item.status = 'done';                           // stays in the popup with a check
         } else {
           let detail = '';
           try { detail = JSON.parse(xhr.responseText).detail; } catch (_) {}
-          // The filename has its own column, so the message is just the reason
-          // (server details are already capitalized; capitalize the fallback too).
           item.status = 'error';
           item.error = detail || ('Upload failed (' + xhr.status + ')');
         }
-        render();
+        renderPopup();
         resolve();
       });
       xhr.addEventListener('error', () => {
         item.status = 'error';
         item.error = 'Network error';
-        render();
+        renderPopup();
         resolve();
       });
       xhr.send(data);
     });
   }
 
+  // Process queued files one at a time; picks up any added mid-run.
   async function runQueue() {
+    if (uploading) return;
     uploading = true;
-    render();
-    // Snapshot the good items; uploadOne mutates `queue` (removes successes) as it goes.
-    for (const item of queue.filter((i) => i.status === 'queued' && !i.error)) {
+    renderPopup();
+    let item;
+    while ((item = queue.find((i) => i.status === 'queued' && !i.error))) {
       item.status = 'uploading';
-      render();
+      renderPopup();
       await uploadOne(item);
     }
     uploading = false;
-    render();
+    renderPopup();
+    maybeAutoClose();
   }
 
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!uploading) runQueue();
-  });
+  uploadBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => addFiles(fileInput.files));
-  listEl.addEventListener('click', (e) => {
+  popup.querySelector('.up-close').addEventListener('click', closePopup);
+  upList.addEventListener('click', (e) => {
     const rm = e.target.closest('.dz-remove');
     if (!rm) return;
     const id = Number(rm.closest('.dz-item').dataset.id);
     queue = queue.filter((i) => i.id !== id);
-    recomputeErrors();
-    render();
+    renderPopup();
   });
-  document.querySelectorAll('.dropzone').forEach((dz) => {
-    ['dragover', 'dragenter'].forEach((ev) =>
-      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('dragover'); }));
-    ['dragleave', 'dragend', 'drop'].forEach((ev) =>
-      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('dragover'); }));
-    dz.addEventListener('drop', (e) => { if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+  // Drag-and-drop anywhere over the main area queues the files.
+  const dropZone = document.querySelector('main');
+  ['dragover', 'dragenter'].forEach((ev) =>
+    dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); }));
+  ['dragleave', 'dragend', 'drop'].forEach((ev) =>
+    dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); }));
+  dropZone.addEventListener('drop', (e) => { if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+  // --- Clipboard popover (toggled from the toolbar button) ---
+  const clipBtn = document.querySelector('.clip-btn');
+  const clipPopover = document.querySelector('.clip-popover');
+  clipBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = clipPopover.hidden;
+    clipPopover.hidden = !willOpen;
+    clipBtn.setAttribute('aria-expanded', String(willOpen));
+  });
+  document.addEventListener('click', (e) => {
+    if (clipPopover.hidden || clipPopover.contains(e.target) || clipBtn.contains(e.target)) return;
+    clipPopover.hidden = true;
+    clipBtn.setAttribute('aria-expanded', 'false');
   });
 </script>
 {% endblock %}

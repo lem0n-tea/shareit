@@ -184,7 +184,6 @@ def get_file_or_404(file_id: int, db: Session) -> models.File:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
     return file
 
-
 def remove_file(file: models.File, db: Session) -> None:
     """Delete the row first (what the user sees), then best-effort remove the bytes."""
     db.delete(file)
@@ -195,3 +194,15 @@ def remove_file(file: models.File, db: Session) -> None:
             os.remove(filepath)
     except Exception:
         pass
+
+def remove_files(file_ids: list[int], db: Session) -> int:
+    deleted_count = 0
+    for file_id in file_ids:
+        file = db.scalars(select(models.File).where(models.File.id == file_id)).first()
+        if file is None:
+            continue
+
+        remove_file(file, db)
+        deleted_count += 1
+
+    return deleted_count

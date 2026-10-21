@@ -80,15 +80,45 @@ a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: var(--accent-soft); }
 
+/* Minimal, themed scrollbars (thin floating thumb, no track chrome). */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 /* ---- Header ---- */
-header { padding: 16px 0; border-bottom: 1px solid var(--border); }
+header { padding: 16px 0; border-bottom: 1px solid var(--border); background: var(--bg); }
 .header-inner {
   display: flex; justify-content: space-between; align-items: center;
   max-width: var(--content-max); margin: 0 auto; padding: 0 24px;
 }
+.header-inner[hidden] { display: none; }   /* hidden while a selection is active */
 header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .center h1 .brand-accent, header h1 .brand-accent { color: var(--accent-strong); }
 .header-right { display: flex; align-items: center; gap: 14px; }
+
+/* Selection action bar — a strip above the column headers while files are selected. */
+.selection-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 7px 10px 7px 14px; margin-bottom: 12px;
+  background: var(--accent-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.selection-bar[hidden] { display: none; }
+.sel-count { font-weight: 600; }
+.sel-actions { margin-left: auto; display: flex; gap: 4px; }
+.selection-bar button {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  padding: 7px; border-radius: var(--radius-sm); display: inline-flex; align-items: center;
+}
+.selection-bar button:hover { background: var(--surface-2); color: var(--fg); }
+.sel-delete:hover { color: var(--err); }
+.selection-bar button:disabled { opacity: .4; cursor: default; }
+.selection-bar button:disabled:hover { background: none; color: var(--muted); }
 
 main { max-width: var(--content-max); margin: 0 auto; padding: 28px 24px; }
 
@@ -213,11 +243,52 @@ form.login {
 .clip .copy { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 1.05rem; line-height: 1; }
 .clip .copy:hover { background: none; color: var(--fg); }
 
-/* ---- Storage bar ---- */
-.storage { margin: 4px 0 20px; }
-.storage-track { background: var(--surface-2); border-radius: 999px; height: 10px; overflow: hidden; }
-.storage-fill { background: var(--accent); height: 100%; transition: width .3s; }
-.storage-text { color: var(--muted); font-size: 0.82rem; margin-top: 6px; font-family: var(--font-mono); }
+/* ---- Storage donut (in the toolbar) ---- */
+.storage { display: flex; align-items: center; gap: 10px; }
+.donut { width: 42px; height: 42px; flex-shrink: 0; }
+.donut-track { fill: none; stroke: var(--surface-2); stroke-width: 3.2; }
+.donut-fill { fill: none; stroke: var(--accent); stroke-width: 3.2; stroke-linecap: round; transition: stroke-dasharray .4s; }
+.donut-text { fill: var(--fg); font-family: var(--font-mono); font-size: 9px; font-weight: 500; }
+.storage-caption { color: var(--muted); font-size: 0.78rem; font-family: var(--font-mono); white-space: nowrap; }
+
+/* ---- Toolbar (compact): upload button, clipboard popover, storage donut ---- */
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.upload-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; }
+.clip-wrap { position: relative; }
+.clip-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; }
+.clip-btn .icon { width: 16px; height: 16px; }
+.storage-slot { margin-left: auto; }
+.clip-popover {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 40; width: min(420px, 90vw);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; box-shadow: var(--shadow), 0 10px 30px rgba(0, 0, 0, .18);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.clip-popover[hidden] { display: none; }
+
+/* ---- Upload activity popup (Drive-style, bottom-right) ---- */
+#upload-popup {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60; width: min(380px, calc(100vw - 40px));
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow), 0 12px 40px rgba(0, 0, 0, .28); overflow: hidden;
+}
+#upload-popup[hidden] { display: none; }
+.up-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border);
+}
+.up-title { font-weight: 600; font-size: 0.92rem; }
+.up-close { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; display: inline-flex; border-radius: var(--radius-sm); }
+.up-close:hover { background: var(--border); color: var(--fg); }
+.up-list { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; }
+
+/* Per-item done check (the popup reuses the .dz-item styles). */
+.dz-check { display: none; color: var(--accent-strong); }
+.dz-item[data-status="done"] .dz-check { display: inline-flex; position: absolute; top: 8px; right: 8px; }
+.dz-item[data-status="done"] .dz-remove { display: none; }
+
+/* Drop-anywhere affordance while dragging files over the app. */
+main.dragover { outline: 2px dashed var(--accent); outline-offset: -8px; border-radius: var(--radius); }
 
 /* ---- File table ---- */
 .table-wrap { overflow-x: auto; }
@@ -243,33 +314,32 @@ td[data-size], td[data-ts] { font-family: var(--font-mono); font-size: 0.88rem; 
 #files thead th:nth-child(2) { width: 100px; }   /* Type */
 #files thead th:nth-child(3) { width: 120px; }   /* Size */
 #files thead th:nth-child(4) { width: 220px; }   /* Uploaded */
-#files thead th:nth-child(5) { width: 52px; }    /* Actions */
 #files td[data-size], #files td[data-ts] { white-space: nowrap; }
 #files tbody td:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-td.actions { text-align: right; white-space: nowrap; }
-.kebab { display: inline-flex; align-items: center; background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 6px; }
-.kebab:hover { background: none; color: var(--fg); }
-.menu {
-  position: fixed; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); min-width: 140px; z-index: 50;
-  display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow), 0 10px 30px rgba(0,0,0,.18);
+/* Rows are click-to-select; the selected ones get an accent wash (beats the id-specific
+   mobile-card background via the #files prefix). */
+tbody tr { cursor: pointer; }
+#files tbody tr.selected, #files tbody tr.selected:hover { background: var(--accent-soft); }
+
+/* ---- Desktop app-shell: lock to the viewport so only the file list scrolls ---- */
+@media (min-width: 601px) {
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .table-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  /* Column headers stay pinned above the scrolling rows. */
+  #files thead th { position: sticky; top: 0; background: var(--bg); z-index: 2; }
 }
-.menu[hidden] { display: none; }
-.menu a, .menu button {
-  display: block; width: 100%; text-align: left; padding: 10px 14px; font-weight: 500;
-  background: none; border: none; color: var(--fg); cursor: pointer; text-decoration: none; border-radius: 0;
-}
-.menu a:hover, .menu button:hover { background: var(--surface-2); text-decoration: none; }
 
 /* ---- Mobile: stack panels; table becomes cards ---- */
 @media (max-width: 600px) {
   main { padding: 18px 16px; }
-  header { padding: 12px 0; }
+  header { padding: 12px 0; position: sticky; top: 0; z-index: 10; }   /* keep the selection bar in view */
   .header-inner { padding: 0 16px; }
   header h1 { font-size: 1.05rem; }
-  .top-bar { flex-direction: column; gap: 16px; }
-  .panel-upload, .panel-clip { width: 100%; min-width: 0; }
+  .toolbar { flex-wrap: wrap; gap: 10px; }
+  #upload-popup { right: 12px; left: 12px; bottom: 12px; width: auto; }
 
   .table-wrap { overflow: visible; }
   #files thead { display: none; }
@@ -284,5 +354,4 @@ td.actions { text-align: right; white-space: nowrap; }
   #files td.col-type, #files td[data-size] { display: inline; color: var(--muted); font-size: 0.82rem; }
   #files td[data-size]::before { content: " · "; font-family: var(--font); }
   #files td[data-ts] { display: block; margin-top: 2px; color: var(--muted); font-size: 0.82rem; }  /* date on its own line */
-  #files td.actions { position: absolute; top: 8px; right: 8px; width: auto; padding: 0; }
 }

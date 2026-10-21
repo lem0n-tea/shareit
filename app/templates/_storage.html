@@ -1,6 +1,10 @@
-<div class="storage">
-  <div class="storage-track">
-    <div class="storage-fill" style="width: {{ (used / capacity * 100) if capacity else 0 }}%"></div>
-  </div>
-  <div class="storage-text">{{ used | filesizeformat }} of {{ capacity | filesizeformat }} used</div>
+{% set pct = ((used / capacity * 100) | round | int) if capacity else 0 %}
+<div class="storage" title="{{ used | filesizeformat }} of {{ capacity | filesizeformat }} used">
+  <svg class="donut" viewBox="0 0 36 36" role="img" aria-label="Storage {{ pct }}% used">
+    <circle class="donut-track" cx="18" cy="18" r="15.915"></circle>
+    <circle class="donut-fill" cx="18" cy="18" r="15.915"
+            stroke-dasharray="{{ pct }} {{ 100 - pct }}" stroke-dashoffset="25"></circle>
+    <text class="donut-text" x="18" y="18" text-anchor="middle" dominant-baseline="central">{{ pct }}%</text>
+  </svg>
+  <span class="storage-caption">{{ used | filesizeformat }} used</span>
 </div>

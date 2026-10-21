@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import get_db
 from app.security import get_current_user
-from app.services import STORAGE_DIR, get_file_list, get_file_or_404, remove_file, save_upload
+from app.services import STORAGE_DIR, get_file_list, get_file_or_404, remove_file, remove_files, save_upload
 
 router = APIRouter(
     prefix="/files", tags=["files"], dependencies=[Depends(get_current_user)]
@@ -64,6 +64,14 @@ async def list_files(
         items=files,
         total=total
     )
+
+@router.delete("", status_code=status.HTTP_200_OK)
+async def delete_files_bulk(
+    ids: Annotated[list[int], Query()],
+    db: Session = Depends(get_db)
+) -> dict:
+   count = remove_files(ids, db)
+   return {"deleted": count}
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_file(file_id: int, db: Session = Depends(get_db)):

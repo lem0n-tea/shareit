@@ -3,12 +3,4 @@
   <td class="col-type">{{ (file.extension | upper) if file.extension else "—" }}</td>
   <td data-size="{{ file.size }}">{{ file.size | filesizeformat }}</td>
   <td data-ts="{{ file.uploaded_at | utc_iso }}">{{ file.uploaded_at.strftime("%Y-%m-%d %H:%M") }} UTC</td>
-  <td class="actions">
-    <button class="kebab" type="button" aria-label="Actions">{{ icon('more') }}</button>
-    <div class="menu" hidden>
-      <a href="/files/{{ file.id }}/download">Download</a>
-      <button type="button" hx-delete="/delete/{{ file.id }}" hx-target="closest tr"
-              hx-swap="outerHTML" hx-confirm="Delete this file?">Delete</button>
-    </div>
-  </td>
 </tr>
