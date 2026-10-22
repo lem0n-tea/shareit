@@ -108,7 +108,9 @@ header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; letter-spacing: -0.
   padding: 7px 10px 7px 14px; margin-bottom: 12px;
   background: var(--accent-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);
 }
-.selection-bar[hidden] { display: none; }
+/* Reserve the bar's space even when empty (visibility, not display) so selecting a
+   file toggles only whether it's drawn — the table below never shifts. */
+.selection-bar[hidden] { visibility: hidden; }
 .sel-count { font-weight: 600; }
 .sel-actions { margin-left: auto; display: flex; gap: 4px; }
 .selection-bar button {
@@ -339,6 +341,14 @@ tbody tr { cursor: pointer; }
   .header-inner { padding: 0 16px; }
   header h1 { font-size: 1.05rem; }
   .toolbar { flex-wrap: wrap; gap: 10px; }
+  .storage-caption { display: none; }   /* drop the "X used" text so the compact donut fits on the toolbar row */
+  /* On mobile the whole page scrolls, so pin the selection bar just below the sticky
+     header (top = measured header height). Opaque backing = the translucent accent tint
+     painted over the page bg, so scrolling cards don't show through. */
+  .selection-bar {
+    position: sticky; top: var(--header-h, 56px); z-index: 9;
+    background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg);
+  }
   #upload-popup { right: 12px; left: 12px; bottom: 12px; width: auto; }
 
   .table-wrap { overflow: visible; }

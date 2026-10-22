@@ -78,6 +78,15 @@
 </template>
 
 <script>
+  // Expose the header's height as --header-h so the mobile sticky selection bar can sit
+  // just below the sticky header. Re-measured on resize (header height varies with width).
+  const pageHeader = document.querySelector('header');
+  function setHeaderHeight() {
+    document.documentElement.style.setProperty('--header-h', pageHeader.offsetHeight + 'px');
+  }
+  setHeaderHeight();
+  window.addEventListener('resize', setHeaderHeight);
+
   // --- Pagination + server-side sorting (keyset) ---
   // Sorting now happens on the server; clicking a header re-queries from page 1, and
   // "Load more" fetches the next keyset page. We track the active sort here and read the
