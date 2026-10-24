@@ -38,6 +38,7 @@ class Upload(Base):
     total_num_chunks: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[UploadStatus] = mapped_column(default=UploadStatus.IN_PROGRESS, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_activity: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
 class Clipboard(Base):
     __tablename__ = "clipboards"

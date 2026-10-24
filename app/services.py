@@ -7,8 +7,7 @@ import os
 import shutil
 import uuid
 import operator
-import hashlib
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -47,11 +46,8 @@ async def save_upload(
 ) -> models.File:
     """Stream the upload to disk in 1 MB chunks (never loading the whole file into
     memory), enforcing the per-file cap and the storage quota as it goes. Writes the
-    file first, then commits the row; cleans up the file on any failure."""
-    disk_free_space = shutil.disk_usage(STORAGE_DIR).free
-    current_storage_size = db.scalar(select(func.sum(models.File.size))) or 0
-    
-    available_space = min(disk_free_space, STORAGE_LIMIT - current_storage_size)
+    file first, then commits the row; cleans up the file on any failure."""  
+    available_disk_space = get_available_space(db)
    
     max_size = settings.max_upload_size
     too_big = f"File exceeds the {max_size // 1024**3} GB limit"
@@ -61,8 +57,13 @@ async def save_upload(
         declared = int(content_length)
         if declared > max_size:
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, too_big)
-        if declared > available_space:
-            raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space")
+        if declared > available_disk_space:
+            if reap_stale_uploads(db) > 0:
+                available_disk_space = get_available_space(db) 
+            if declared > available_disk_space:
+                raise HTTPException(
+                    status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space"
+                )
 
     name, extension = os.path.splitext(upload.filename or "")
     extension = extension[1:].lower() or None
@@ -87,7 +88,7 @@ async def save_upload(
                 # Enforce the limits even if Content-Length was absent or lied.
                 if size > max_size:
                     raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, too_big)
-                if size > available_space:
+                if size > available_disk_space:
                     raise HTTPException(
                         status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space"
                     )
@@ -120,6 +121,19 @@ async def save_upload(
     db.refresh(file)
     return file
 
+def get_available_space(db: Session) -> int:
+    current_storage_size = db.scalar(select(func.sum(models.File.size))) or 0
+    reserved_space = db.scalar(select(func.sum(models.Upload.total_size))
+                            .where(or_(
+                                models.Upload.status == models.UploadStatus.IN_PROGRESS,
+                                models.Upload.status == models.UploadStatus.FINALIZING
+                            ))) or 0
+    used_disk_space = current_storage_size + reserved_space
+
+    disk_free_space = shutil.disk_usage(STORAGE_DIR).free
+
+    return min(disk_free_space, STORAGE_LIMIT - used_disk_space)
+
 def save_manifest(
     db: Session,
     *,
@@ -146,21 +160,16 @@ def save_manifest(
             detail="Such file already exists"
         )
 
-    current_storage_size = db.scalar(select(func.sum(models.File.size))) or 0
-    reserved_space = db.scalar(select(func.sum(models.Upload.total_size))
-                               .where(or_(
-                                   models.Upload.status == models.UploadStatus.IN_PROGRESS,
-                                   models.Upload.status == models.UploadStatus.FINALIZING
-                               ))) or 0
-    used_disk_space = current_storage_size + reserved_space
-
-    disk_free_space = shutil.disk_usage(STORAGE_DIR).free
-
-    available_disk_space = min(disk_free_space, STORAGE_LIMIT - used_disk_space)
+    available_disk_space = get_available_space(db)
+    
     if total_size > available_disk_space:
-        raise HTTPException(
-            status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space"
-        )
+        if reap_stale_uploads(db) > 0:
+            available_disk_space = get_available_space(db) 
+        if total_size > available_disk_space:
+            raise HTTPException(
+                status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space"
+            )
+            
 
     while True:
         try:
@@ -227,6 +236,11 @@ async def write_chunk(db: Session, *, upload_uuid: str, position: int, body: Upl
                         detail="Chunks exceed declared total size"
                     )
                 out.write(chunk)
+
+        if (datetime.now(timezone.utc) - pending_upload.last_activity).total_seconds() > 60:
+            pending_upload.last_activity = datetime.now(timezone.utc)
+            db.commit()
+
     except HTTPException:
         if os.path.exists(dest):
             os.remove(dest)
@@ -259,6 +273,7 @@ async def finalize_upload(db: Session, *, upload_uuid: str, client_checksum: str
             detail="Upload finalization have already been initiated"
         )
     pending_upload.status = models.UploadStatus.FINALIZING
+    pending_upload.last_activity = datetime.now(timezone.utc)
     db.commit()
 
     upload_dir = os.path.join(PENDING_UPLOADS_DIR, upload_uuid)
@@ -267,6 +282,7 @@ async def finalize_upload(db: Session, *, upload_uuid: str, client_checksum: str
     received_chunks = sorted(get_received_chunks(upload_uuid))
     if received_chunks != list(range(pending_upload.total_num_chunks)):
         pending_upload.status = models.UploadStatus.IN_PROGRESS
+        pending_upload.last_activity = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -352,6 +368,28 @@ def get_missing_chunks(db: Session, upload_uuid: str) -> list[int]:
     expected_chunks = set(range(pending_upload.total_num_chunks))
 
     return sorted(list(expected_chunks - received_chunks))
+
+def reap_stale_uploads(db: Session) -> int:
+    stale_uploads = db.scalars(select(models.Upload)
+                               .where(
+                                   (models.Upload.last_activity < datetime.now(timezone.utc) - timedelta(seconds=settings.upload_stale_after_seconds)),
+                                   models.Upload.status.in_([models.UploadStatus.IN_PROGRESS, models.UploadStatus.FINALIZING])
+                               )).all()
+    reap_count = 0
+    for upload in stale_uploads:
+        try:
+            upload_path = os.path.join(PENDING_UPLOADS_DIR, upload.uuid)
+            if os.path.exists(upload_path):
+                shutil.rmtree(upload_path)
+
+            db.delete(upload)
+            db.commit()
+            reap_count += 1
+        except Exception as e:
+            db.rollback()
+            continue
+    
+    return reap_count
 
 def get_usage(db: Session) -> tuple[int, int]:
     """Return (bytes used, capacity). Capacity is the stable denominator for the bar."""

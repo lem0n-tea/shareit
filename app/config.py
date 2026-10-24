@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     max_upload_size: int = 5 * 1024**3  # per-file cap (5 GiB)
 
     pending_uploads_dir: str = "./data/uploads"
+    upload_stale_after_seconds: int = 3600
 
     database_url: str = "sqlite:///./data/shareit.db"
 
