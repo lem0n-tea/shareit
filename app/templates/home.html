@@ -527,7 +527,8 @@
     if (!rm) return;
     const id = Number(rm.closest('.dz-item').dataset.id);
     queue = queue.filter((i) => i.id !== id);
-    renderPopup();
+    if (queue.length) renderPopup();
+    else closePopup();   // nothing left to show -> hide the popup
   });
 
   // Drag-and-drop anywhere over the main area queues the files.
