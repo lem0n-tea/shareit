@@ -1,15 +1,18 @@
 """Shared file-handling logic, used by BOTH the JSON API (routers/files.py) and the
 web UI (routers/web.py). Keeping it here means the quota/consistency rules live in one
 place; each router just differs in what it returns (JSON vs HTML)."""
+import hashlib
 import mimetypes
 import os
 import shutil
 import uuid
 import operator
+import hashlib
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, select, tuple_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +22,9 @@ from app.config import settings
 # Where uploaded bytes live on disk. Created at import so it always exists.
 STORAGE_DIR = settings.storage_dir
 os.makedirs(STORAGE_DIR, exist_ok=True)
+
+PENDING_UPLOADS_DIR = settings.pending_uploads_dir
+os.makedirs(PENDING_UPLOADS_DIR, exist_ok=True)
 
 # Capacity: the configured limit, or the whole disk if none is set.
 STORAGE_LIMIT = settings.storage_limit or shutil.disk_usage(STORAGE_DIR).total
@@ -44,7 +50,9 @@ async def save_upload(
     file first, then commits the row; cleans up the file on any failure."""
     disk_free_space = shutil.disk_usage(STORAGE_DIR).free
     current_storage_size = db.scalar(select(func.sum(models.File.size))) or 0
+    
     available_space = min(disk_free_space, STORAGE_LIMIT - current_storage_size)
+   
     max_size = settings.max_upload_size
     too_big = f"File exceeds the {max_size // 1024**3} GB limit"
 
@@ -112,6 +120,238 @@ async def save_upload(
     db.refresh(file)
     return file
 
+def save_manifest(
+    db: Session,
+    *,
+    filename: str,
+    content_type: str,
+    total_size: int,
+    total_num_chunks: int
+) -> models.Upload:
+    if total_size > settings.max_upload_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"File exceeds the {settings.max_upload_size // 1024**3} GB limit"
+        )
+
+    name, extension = os.path.splitext(filename or "")
+    extension = extension[1:].lower() or None
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A filename is required")
+
+    same_filename = db.scalars(select(models.File).where(models.File.name == name, models.File.extension == extension)).first()
+    if same_filename:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Such file already exists"
+        )
+
+    current_storage_size = db.scalar(select(func.sum(models.File.size))) or 0
+    reserved_space = db.scalar(select(func.sum(models.Upload.total_size))
+                               .where(or_(
+                                   models.Upload.status == models.UploadStatus.IN_PROGRESS,
+                                   models.Upload.status == models.UploadStatus.FINALIZING
+                               ))) or 0
+    used_disk_space = current_storage_size + reserved_space
+
+    disk_free_space = shutil.disk_usage(STORAGE_DIR).free
+
+    available_disk_space = min(disk_free_space, STORAGE_LIMIT - used_disk_space)
+    if total_size > available_disk_space:
+        raise HTTPException(
+            status.HTTP_507_INSUFFICIENT_STORAGE, "Not enough free space"
+        )
+
+    while True:
+        try:
+            upload_uuid = uuid.uuid4().hex
+            os.makedirs(os.path.join(PENDING_UPLOADS_DIR, upload_uuid))
+            break
+        except FileExistsError:
+            continue
+
+    upload = models.Upload(
+        uuid=upload_uuid,
+        name=name,
+        extension=extension,
+        content_type=content_type,
+        total_size=total_size,
+        total_num_chunks=total_num_chunks
+    )
+    try:
+        db.add(upload)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        os.rmdir(os.path.join(PENDING_UPLOADS_DIR, upload_uuid))
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Upload initialization failed") from e
+
+    db.refresh(upload)
+    return upload
+
+async def write_chunk(db: Session, *, upload_uuid: str, position: int, body: UploadFile) -> int:
+    pending_upload = db.scalars(select(models.Upload).where(models.Upload.uuid == upload_uuid)).first()
+    if pending_upload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload not found"
+        )
+    if pending_upload.status != models.UploadStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="All declared chunks have been received"
+        )
+
+    if position < 0 or position > pending_upload.total_num_chunks - 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chunk position is out of range for the declared upload"
+        )
+
+    dest = os.path.join(PENDING_UPLOADS_DIR, upload_uuid, str(position))
+    size = 0
+    try:
+        received_chunks = [p for p in Path(os.path.join(PENDING_UPLOADS_DIR, upload_uuid)).iterdir() 
+                               if p.is_file() and p.name != str(position)]
+        received_size = sum(p.stat().st_size for p in received_chunks )
+        
+        with open(dest, "wb") as out:
+            while True:
+                chunk = await body.read(1024 * 1024)  # 1 MB at a time
+                if not chunk:
+                    break
+                size += len(chunk)
+                if received_size + size > pending_upload.total_size:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                        detail="Chunks exceed declared total size"
+                    )
+                out.write(chunk)
+    except HTTPException:
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise
+    except Exception as e:
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Chunk upload failed") from e
+
+    return position
+
+def get_received_chunks(upload_uuid: str) -> list[int]:
+    try:
+        files = [p for p in Path(os.path.join(PENDING_UPLOADS_DIR, upload_uuid)).iterdir() if p.is_file()]
+        return [int(f.name) for f in files]
+    except Exception as e:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to read received chunks") from e
+
+async def finalize_upload(db: Session, *, upload_uuid: str, client_checksum: str) -> models.File:
+    pending_upload = db.scalars(select(models.Upload).where(models.Upload.uuid == upload_uuid)).first()
+    if pending_upload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload not found"
+        )
+    
+    if pending_upload.status != models.UploadStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload finalization have already been initiated"
+        )
+    pending_upload.status = models.UploadStatus.FINALIZING
+    db.commit()
+
+    upload_dir = os.path.join(PENDING_UPLOADS_DIR, upload_uuid)
+
+    # Parts are still intact here, so an incomplete upload can resume
+    received_chunks = sorted(get_received_chunks(upload_uuid))
+    if received_chunks != list(range(pending_upload.total_num_chunks)):
+        pending_upload.status = models.UploadStatus.IN_PROGRESS
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload is incomplete"
+        )
+
+    # Stream the parts in order into one file, hashing as we go and deleting each part
+    # once copied. Past this point the parts are consumed, so any failure means
+    # the upload can no longer resume
+    hasher = hashlib.sha256()
+    filepath = uuid.uuid4().hex
+    dest = os.path.join(STORAGE_DIR, filepath)
+    size = 0
+    try:
+        with open(dest, "wb") as out:
+            for part in received_chunks:
+                source = os.path.join(upload_dir, str(part))
+                with open(source, "rb") as f:
+                    while chunk := f.read(1024 * 1024):
+                        size += len(chunk)
+                        out.write(chunk)
+                        hasher.update(chunk)
+                os.remove(source)
+    except Exception as e:
+        _abandon_upload(db, pending_upload, upload_dir, dest)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Finalization failed") from e
+
+    # Integrity check: a mismatch means the reassembly is wrong
+    # The parts are gone, so abandon and let the client retry.
+    if hasher.hexdigest() != client_checksum.strip().lower():
+        _abandon_upload(db, pending_upload, upload_dir, dest)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Expected and received checksums mismatch"
+        )
+
+    # Commit the real file and drop the upload row in one transaction
+    file = models.File(
+        name=pending_upload.name, extension=pending_upload.extension,
+        content_type=pending_upload.content_type, size=size, path=filepath,
+    )
+    db.add(file)
+    db.delete(pending_upload)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _abandon_upload(db, pending_upload, upload_dir, dest)
+        raise HTTPException(status.HTTP_409_CONFLICT, "Such file already exists")
+    except Exception as e:
+        db.rollback()
+        _abandon_upload(db, pending_upload, upload_dir, dest)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Finalization failed") from e
+
+    db.refresh(file)
+    # Parts already removed during assembly; drop the empty upload dir
+    shutil.rmtree(upload_dir, ignore_errors=True)
+    return file
+
+
+def _abandon_upload(db: Session, upload: models.Upload, upload_dir: str, dest: str) -> None:
+    """Give up on an upload that can no longer be resumed: remove the assembled file and
+    any remaining parts, and delete the upload row so its reserved quota is released."""
+    if os.path.exists(dest):
+        os.remove(dest)
+    shutil.rmtree(upload_dir, ignore_errors=True)
+    try:
+        db.delete(upload)
+        db.commit()
+    except Exception:
+        db.rollback()
+    
+
+def get_missing_chunks(db: Session, upload_uuid: str) -> list[int]:
+    pending_upload = db.scalars(select(models.Upload).where(models.Upload.uuid == upload_uuid)).first()
+    if pending_upload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload not found"
+        )
+    
+    received_chunks = set(get_received_chunks(upload_uuid))
+    expected_chunks = set(range(pending_upload.total_num_chunks))
+
+    return sorted(list(expected_chunks - received_chunks))
 
 def get_usage(db: Session) -> tuple[int, int]:
     """Return (bytes used, capacity). Capacity is the stable denominator for the bar."""

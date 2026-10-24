@@ -77,6 +77,9 @@
   </li>
 </template>
 
+<!-- Streaming SHA-256 for chunked uploads: crypto.subtle.digest is one-shot (needs the
+     whole file in memory), so we use a library that hashes incrementally per chunk. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.9.0/sha256.min.js"></script>
 <script>
   // Expose the header's height as --header-h so the mobile sticky selection bar can sit
   // just below the sticky header. Re-measured on resize (header height varies with width).
@@ -289,6 +292,8 @@
   const itemTpl = document.getElementById('dz-item-tpl');
   const maxSize = Number(fileInput.dataset.maxSize);
   const gbLimit = Math.round(maxSize / 1024 ** 3);
+  const CHUNK_SIZE = 5 * 1024 * 1024;        // 5 MB per part (chunked path)
+  const CHUNK_THRESHOLD = 10 * 1024 * 1024;  // only files larger than this are chunked
 
   let queue = [];   // [{id, file, status: 'queued'|'uploading'|'done'|'error', error, progress}]
   let nextId = 0;
@@ -400,6 +405,104 @@
     });
   }
 
+  // --- Large files: resumable chunked upload (manifest -> chunks -> finalize) ---
+  // Files over CHUNK_THRESHOLD go through the chunked API so a dropped connection resumes
+  // from the missing parts instead of restarting. Smaller files use uploadOne above.
+  function setProgress(item, pct) {
+    item.progress = pct;
+    const p = upList.querySelector('.dz-item[data-id="' + item.id + '"] .dz-progress');
+    if (p) { p.hidden = false; p.value = pct; }
+  }
+
+  // PUT one part, retrying a few times on a transient failure (network blip / 5xx).
+  async function putChunk(uuid, index, blob) {
+    const data = new FormData();
+    data.append('chunk', blob, String(index));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await fetch('/uploads/' + uuid + '/chunks/' + index, { method: 'PUT', body: data });
+        if (r.ok) return;
+        if (r.status < 500) {                 // a 4xx won't fix itself on retry
+          let d = ''; try { d = (await r.json()).detail; } catch (_) {}
+          throw new Error(d || ('chunk ' + index + ' failed (' + r.status + ')'));
+        }
+      } catch (e) {
+        if (attempt === 2) throw e;           // give up after 3 attempts
+      }
+    }
+  }
+
+  async function uploadChunked(item) {
+    const file = item.file;
+    const total = file.size;
+    const nChunks = Math.ceil(total / CHUNK_SIZE);
+
+    // 1. Manifest -> server-minted uuid (also where quota/size/dup are checked up front).
+    const mRes = await fetch('/uploads', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+        total_size: total, total_num_chunks: nChunks,
+      }),
+    });
+    if (!mRes.ok) {
+      let d = ''; try { d = (await mRes.json()).detail; } catch (_) {}
+      throw new Error(d || ('Could not start upload (' + mRes.status + ')'));
+    }
+    const { uuid } = await mRes.json();
+
+    // 2. Send each part in order, hashing the whole file incrementally (one 5 MB slice in
+    //    memory at a time -- never the whole file).
+    const hasher = sha256.create();
+    let sent = 0;
+    for (let i = 0; i < nChunks; i++) {
+      const blob = file.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, total));
+      hasher.update(await blob.arrayBuffer());
+      await putChunk(uuid, i, blob);
+      sent += blob.size;
+      setProgress(item, Math.round(sent / total * 100));
+    }
+
+    // 3. Safety net: ask what's still missing (a silently dropped part) and resend it.
+    const missRes = await fetch('/uploads/' + uuid);
+    if (missRes.ok) {
+      for (const i of (await missRes.json()).missing) {
+        await putChunk(uuid, i, file.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, total)));
+      }
+    }
+
+    // 4. Finalize -> server reassembles, verifies the hash, and commits the File.
+    const fRes = await fetch('/uploads/' + uuid + '/finalize', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ checksum: hasher.hex() }),
+    });
+    if (!fRes.ok) {
+      let d = ''; try { d = (await fRes.json()).detail; } catch (_) {}
+      throw new Error(d || ('Finalize failed (' + fRes.status + ')'));
+    }
+    // Finalize returns JSON (not an HTML row), so refresh the current page of the list
+    // instead of splicing a row in, and nudge the storage donut.
+    await fetchPage(true);
+    htmx.trigger(document.body, 'filesChanged');
+  }
+
+  // Route each file: small files keep the single-request path; large ones go chunked.
+  async function uploadFile(item) {
+    if (item.file.size > CHUNK_THRESHOLD) {
+      try {
+        await uploadChunked(item);
+        item.status = 'done';
+      } catch (e) {
+        item.status = 'error';
+        item.error = (e && e.message) || 'Upload failed';
+      }
+      renderPopup();
+    } else {
+      await uploadOne(item);   // sets its own status + renders
+    }
+  }
+
   // Process queued files one at a time; picks up any added mid-run.
   async function runQueue() {
     if (uploading) return;
@@ -409,7 +512,7 @@
     while ((item = queue.find((i) => i.status === 'queued' && !i.error))) {
       item.status = 'uploading';
       renderPopup();
-      await uploadOne(item);
+      await uploadFile(item);
     }
     uploading = false;
     renderPopup();
