@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     pending_uploads_dir: str = "./data/uploads"
     upload_stale_after_seconds: int = 3600
+    periodic_reap_interval_seconds: int = 12 * 3600
 
     database_url: str = "sqlite:///./data/shareit.db"
 

@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -10,13 +13,20 @@ from app.security import create_access_token_for_sub, valid_token_sub
 # SQLAlchemy would not know the "files" table exists, and create_all would make
 # nothing.
 from app import models
+from app.services import periodic_reaper
 
 # Create any missing tables at startup. This is fine for development. For real
 # schema *changes* later (adding/altering columns on an existing DB), you'd switch
 # to migrations with Alembic -- a roadmap item, not needed yet.
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Shareit")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(periodic_reaper())
+    yield
+    task.cancel()
+
+app = FastAPI(title="Shareit", lifespan=lifespan)
 
 # Serve the stylesheet (and any future static assets) from app/static.
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

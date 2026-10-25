@@ -1,6 +1,7 @@
 """Shared file-handling logic, used by BOTH the JSON API (routers/files.py) and the
 web UI (routers/web.py). Keeping it here means the quota/consistency rules live in one
 place; each router just differs in what it returns (JSON vs HTML)."""
+import asyncio
 import hashlib
 import mimetypes
 import os
@@ -16,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models
+from app.database import SessionLocal
 from app.config import settings
 
 # Where uploaded bytes live on disk. Created at import so it always exists.
@@ -390,6 +392,18 @@ def reap_stale_uploads(db: Session) -> int:
             continue
     
     return reap_count
+
+async def periodic_reaper():
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                await asyncio.to_thread(reap_stale_uploads, db)
+            finally:
+                db.close()
+        except Exception:
+            pass
+        await asyncio.sleep(settings.periodic_reap_interval_seconds)
 
 def get_usage(db: Session) -> tuple[int, int]:
     """Return (bytes used, capacity). Capacity is the stable denominator for the bar."""
