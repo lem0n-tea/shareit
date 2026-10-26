@@ -122,6 +122,30 @@ header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; letter-spacing: -0.
 .selection-bar button:disabled { opacity: .4; cursor: default; }
 .selection-bar button:disabled:hover { background: none; color: var(--muted); }
 
+/* Mobile sort bar — only shown under 600px (see @media block below). Sits between the
+   selection bar and the list; non-sticky, so it scrolls away with the toolbar. */
+.sort-bar { display: none; align-items: center; gap: 8px; margin-bottom: 12px; }
+.sort-field-wrap { position: relative; }
+.sort-field { display: inline-flex; align-items: center; gap: 8px; height: 38px; }
+.sort-field-chevron { display: inline-flex; align-items: center; }
+.sort-field-chevron .icon { width: 14px; height: 14px; transform: rotate(180deg); }
+.sort-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 160px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px; box-shadow: var(--shadow), 0 10px 30px rgba(0, 0, 0, .18);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sort-menu[hidden] { display: none; }
+.sort-menu button {
+  background: none; color: var(--fg); border: none; text-align: left; padding: 8px 12px;
+  border-radius: var(--radius-sm); font-weight: 500;
+}
+.sort-menu button:hover { background: var(--surface-2); }
+.sort-dir { width: 42px; justify-content: center; padding: 0; margin-left: auto; }
+.sort-dir .sort-icon-asc, .sort-dir .sort-icon-desc { display: none; }
+.sort-dir[data-dir="asc"] .sort-icon-asc { display: inline-flex; }
+.sort-dir[data-dir="desc"] .sort-icon-desc { display: inline-flex; }
+
 main { max-width: var(--content-max); margin: 0 auto; padding: 28px 24px; }
 
 /* ---- Buttons ---- */
@@ -349,6 +373,7 @@ tbody tr { cursor: pointer; }
     position: sticky; top: var(--header-h, 56px); z-index: 9;
     background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg);
   }
+  .sort-bar { display: flex; }   /* mobile-only control */
   #upload-popup { right: 12px; left: 12px; bottom: 12px; width: auto; }
 
   .table-wrap { overflow: visible; }

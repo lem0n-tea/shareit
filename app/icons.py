@@ -38,6 +38,10 @@ _PATHS = {
     "download": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'
                 '<path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
     "close": '<path d="M18 6 6 18"/><path d="M6 6l12 12"/>',
+    # Horizontal lines in ascending length (short→long): "smallest first" convention.
+    "sort-asc": '<path d="M4 6h6"/><path d="M4 12h12"/><path d="M4 18h18"/>',
+    # Horizontal lines in descending length (long→short): "largest first" convention.
+    "sort-desc": '<path d="M4 6h18"/><path d="M4 12h12"/><path d="M4 18h6"/>',
 }
 
 

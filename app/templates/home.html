@@ -35,6 +35,27 @@
     </div>
   </div>
 
+  <!-- Mobile-only sort controls (desktop sorts via column headers). The field button opens a
+       small popover; the direction button swaps between ascending/descending glyphs. -->
+  <div class="sort-bar">
+    <div class="sort-field-wrap">
+      <button class="btn-ghost sort-field" type="button" aria-expanded="false">
+        <span class="sort-field-label">Uploaded</span>
+        <span class="sort-field-chevron">{{ icon('chevron') }}</span>
+      </button>
+      <div class="sort-menu" hidden>
+        <button type="button" data-sort="name">Name</button>
+        <button type="button" data-sort="type">Type</button>
+        <button type="button" data-sort="size">Size</button>
+        <button type="button" data-sort="uploaded_at">Uploaded</button>
+      </div>
+    </div>
+    <button class="btn-ghost sort-dir" type="button" data-dir="desc" aria-label="Toggle sort direction">
+      <span class="sort-icon-asc">{{ icon('sort-asc') }}</span>
+      <span class="sort-icon-desc">{{ icon('sort-desc') }}</span>
+    </button>
+  </div>
+
   <div class="table-wrap">
   <table id="files">
     <thead>
@@ -162,28 +183,69 @@
     if (loadMoreBtn.hidden) tbody.appendChild(newRow);   // nothing more to load -> it goes last
   }
 
-  // Header click: re-sort on the server (resets to page 1). The same column toggles
-  // direction; a new column starts descending for time, ascending otherwise.
+  // Mobile sort controls (hidden on desktop by CSS). They drive the same state as the
+  // header clicks, so a resize mid-session never desyncs the two surfaces.
+  const sortFieldBtn = document.querySelector('.sort-field');
+  const sortFieldLabel = sortFieldBtn.querySelector('.sort-field-label');
+  const sortMenu = document.querySelector('.sort-menu');
+  const sortDirBtn = document.querySelector('.sort-dir');
+  const FIELD_LABELS = { name: 'Name', type: 'Type', size: 'Size', uploaded_at: 'Uploaded' };
+
+  // Push the current (sortBy, sortDir) into every surface that shows it.
+  function reflectSort() {
+    headers.forEach((h, idx) => {
+      const isActive = SORT_KEYS[idx] === sortBy;
+      h.classList.toggle('sorted', isActive);
+      h.querySelector('.arrow').classList.toggle('desc', isActive && sortDir === 'desc');
+    });
+    sortFieldLabel.textContent = FIELD_LABELS[sortBy];
+    sortDirBtn.dataset.dir = sortDir;   // CSS swaps the asc/desc icon
+  }
+  // Pick a sort field. Same field as current = toggle direction (header-click behavior).
+  function applySort(key) {
+    if (sortBy === key) sortDir = (sortDir === 'asc' ? 'desc' : 'asc');
+    else { sortBy = key; sortDir = (key === 'uploaded_at' ? 'desc' : 'asc'); }
+    reflectSort();
+    fetchPage(true);
+  }
+  function toggleDir() {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    reflectSort();
+    fetchPage(true);
+  }
+
   headers.forEach((th, idx) => {
     if (idx >= SORT_KEYS.length) return;   // skip the actions column
-    th.addEventListener('click', () => {
-      const key = SORT_KEYS[idx];
-      if (sortBy === key) sortDir = (sortDir === 'asc' ? 'desc' : 'asc');
-      else { sortBy = key; sortDir = (key === 'uploaded_at' ? 'desc' : 'asc'); }
-      headers.forEach((h) => h.classList.remove('sorted'));
-      th.classList.add('sorted');
-      th.querySelector('.arrow').classList.toggle('desc', sortDir === 'desc');
-      fetchPage(true);
-    });
+    th.addEventListener('click', () => applySort(SORT_KEYS[idx]));
   });
   loadMoreBtn.addEventListener('click', () => fetchPage(false));
 
-  // Reflect the initial server sort (uploaded_at, newest first) in the header.
-  (function () {
-    const th = headers[SORT_KEYS.indexOf('uploaded_at')];
-    th.classList.add('sorted');
-    th.querySelector('.arrow').classList.add('desc');
-  })();
+  // Field button opens a popover of the four sort fields; picking one closes it.
+  // (Reusing the same key is a no-op here — the mobile menu is for picking a different
+  // field; the direction button is the dedicated toggle.)
+  sortFieldBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = sortMenu.hidden;
+    sortMenu.hidden = !willOpen;
+    sortFieldBtn.setAttribute('aria-expanded', String(willOpen));
+  });
+  sortMenu.querySelectorAll('button[data-sort]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      sortMenu.hidden = true;
+      sortFieldBtn.setAttribute('aria-expanded', 'false');
+      if (btn.dataset.sort !== sortBy) applySort(btn.dataset.sort);
+    });
+  });
+  sortDirBtn.addEventListener('click', toggleDir);
+  // Dismiss the menu on outside clicks (same pattern as the clipboard popover below).
+  document.addEventListener('click', (e) => {
+    if (sortMenu.hidden || sortMenu.contains(e.target) || sortFieldBtn.contains(e.target)) return;
+    sortMenu.hidden = true;
+    sortFieldBtn.setAttribute('aria-expanded', 'false');
+  });
+
+  // Reflect the initial server sort (uploaded_at, newest first) in every surface.
+  reflectSort();
 
   // Convert the UTC timestamps to the viewer's local time + locale format. The cell's
   // data-ts holds the source UTC ISO string, so this is idempotent and safe to re-run
