@@ -604,9 +604,17 @@
   // --- Clipboard popover (toggled from the toolbar button) ---
   const clipBtn = document.querySelector('.clip-btn');
   const clipPopover = document.querySelector('.clip-popover');
+  const clipWrap = document.querySelector('.clip-wrap');
+  // The mobile popover spans the viewport with a 12px gutter; its left offset is driven
+  // by this CSS var so it can anchor to the viewport left edge, not the Clipboard button.
+  function updateClipWrapLeft() {
+    document.documentElement.style.setProperty('--clip-wrap-left', clipWrap.getBoundingClientRect().left + 'px');
+  }
+  window.addEventListener('resize', updateClipWrapLeft);
   clipBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const willOpen = clipPopover.hidden;
+    if (willOpen) updateClipWrapLeft();
     clipPopover.hidden = !willOpen;
     clipBtn.setAttribute('aria-expanded', String(willOpen));
   });

@@ -375,6 +375,11 @@ tbody tr { cursor: pointer; }
   }
   .sort-bar { display: flex; }   /* mobile-only control */
   #upload-popup { right: 12px; left: 12px; bottom: 12px; width: auto; }
+  /* Span the viewport minus 12px gutters while staying absolute (so it scrolls with the page).
+     --clip-wrap-left is the Clipboard button wrapper's left offset from the viewport, set by JS.
+     Shifting the popover left by that offset re-anchors its left edge to viewport x = 12px. */
+  /* Below the sticky header's z-index (10) so the header covers it on scroll. */
+  .clip-popover { left: calc(12px - var(--clip-wrap-left, 0px)); width: calc(100vw - 24px); z-index: 5; }
 
   .table-wrap { overflow: visible; }
   #files thead { display: none; }

@@ -1,4 +1,6 @@
-nikva.duckdns.org {
+# Replace this with your own domain (e.g. yourname.duckdns.org or your own domain).
+# Caddy auto-provisions a Let's Encrypt certificate for the hostname below.
+your-domain.example.com {
 	# Forward all requests to the app container over the internal Docker network.
 	# "app" is the compose service name, which resolves to that container.
 	reverse_proxy app:8000

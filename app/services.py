@@ -239,7 +239,8 @@ async def write_chunk(db: Session, *, upload_uuid: str, position: int, body: Upl
                     )
                 out.write(chunk)
 
-        if (datetime.now(timezone.utc) - pending_upload.last_activity).total_seconds() > 60:
+        last_activity = pending_upload.last_activity.replace(tzinfo=timezone.utc)
+        if (datetime.now(timezone.utc) - last_activity).total_seconds() > 60:
             pending_upload.last_activity = datetime.now(timezone.utc)
             db.commit()
 
