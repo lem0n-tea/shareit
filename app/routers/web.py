@@ -15,12 +15,14 @@ from app.security import (
     create_refresh_token,
     decode_token,
     get_current_user,
+    hash_password,
     verify_password,
 )
 from app.services import (
     get_file_list,
     get_file_or_404,
     get_usage,
+    get_user,
     read_clipboard,
     remove_file,
     save_upload,
@@ -95,7 +97,9 @@ def _set_auth_cookies(response: Response, user: models.User) -> None:
 async def home(request: Request, db: Session = Depends(get_db)):
     user = _user_from_cookie(request, db)
     if not user:
-        return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        # No account yet → first-run visitors go to register; otherwise to login.
+        target = "/register" if get_user(db) is None else "/login"
+        return RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
     # First page, default sort (newest first). Fetch one extra to know if more remain.
     files, _ = await get_file_list(
         db, sort="uploaded_at", direction="desc",
@@ -138,7 +142,10 @@ async def files_page(
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
+def login_page(request: Request, db: Session = Depends(get_db)):
+    # Nothing to log into before anyone has registered — go set the password.
+    if get_user(db) is None:
+        return RedirectResponse("/register", status_code=status.HTTP_303_SEE_OTHER)
     return templates.TemplateResponse(request, "login.html")
 
 
@@ -157,6 +164,47 @@ def login_submit(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
     # Post/Redirect/Get: redirect after a successful POST, setting cookies on the way.
+    response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+    _set_auth_cookies(response, user)
+    return response
+
+
+@router.get("/register", response_class=HTMLResponse)
+def register_page(request: Request, db: Session = Depends(get_db)):
+    # Single-user: once the account exists, registration is permanently closed.
+    if get_user(db) is not None:
+        return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+    return templates.TemplateResponse(request, "register.html")
+
+
+@router.post("/register", response_class=HTMLResponse)
+def register_submit(
+    request: Request,
+    password: str = Form(...),
+    confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    # First-run only: refuse once the single account exists.
+    if get_user(db) is not None:
+        return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    def fail(message: str):
+        return templates.TemplateResponse(
+            request, "register.html", {"error": message},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if len(password) < 8:
+        return fail("Password must be at least 8 characters")
+    if password != confirm:
+        return fail("Passwords do not match")
+
+    user = models.User(password_hash=hash_password(password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Log the new account straight in (Post/Redirect/Get), same as login.
     response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
     _set_auth_cookies(response, user)
     return response

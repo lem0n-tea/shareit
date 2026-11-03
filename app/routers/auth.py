@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app import schemas, models
 from app.database import get_db
 from app.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
+from app.services import get_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -15,7 +16,7 @@ async def register_user(
     credentials: schemas.PasswordIn,
     db: Session = Depends(get_db)
 ):
-    user = db.scalars(select(models.User)).first()
+    user = get_user(db)
     if user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -41,7 +42,7 @@ async def login_user(
     credentials: schemas.PasswordIn,
     db: Session = Depends(get_db)
 ):
-    user = db.scalars(select(models.User)).first()
+    user = get_user(db)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

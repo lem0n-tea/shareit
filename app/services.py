@@ -412,6 +412,11 @@ def get_usage(db: Session) -> tuple[int, int]:
     return used, STORAGE_LIMIT
 
 
+def get_user(db: Session) -> models.User | None:
+    """The single account, or None if nobody has registered yet (single-user app)."""
+    return db.scalars(select(models.User)).first()
+
+
 def read_clipboard(db: Session) -> models.Clipboard | None:
     return db.scalars(select(models.Clipboard)).first()
 
