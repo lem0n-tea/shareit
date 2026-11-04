@@ -25,7 +25,7 @@ native clients) and a server-rendered web UI from the same codebase.
 ## Features
 
 - Upload any file type (any size up to the configured per-file cap, default 5 GiB).
-- Resumable chunked uploads for large files, with SHA-256 verification on finalize.
+- Resumable chunked uploads for files over 10 MB, with SHA-256 verification on finalize.
 - Multi-file upload with per-file progress and sequential queueing.
 - File list with name, type, size, upload time, keyset-paginated and server-sorted.
 - Download, delete, and bulk delete.
@@ -95,13 +95,17 @@ uvicorn app.main:app --reload
 
 Then:
 
-- Open <http://localhost:8000/> — the web UI (will redirect you to `/login`).
+- Open <http://localhost:8000/> — the web UI (redirects to `/register` on first
+  run, `/login` afterwards).
 - Open <http://localhost:8000/docs> — Swagger UI for the JSON API.
 
 ### First run: register
 
 Shareit is single-user. The very first thing you do is register, which also
-logs you in:
+logs you in. Open the web UI and you'll land on the `/register` page: choose a
+password (at least 8 characters) and confirm it.
+
+Or register through the API:
 
 ```bash
 curl -X POST http://localhost:8000/auth/register \
@@ -109,11 +113,12 @@ curl -X POST http://localhost:8000/auth/register \
   -d '{"password": "your-strong-password"}'
 ```
 
-Or just submit the register form on the web UI's `/login` page. After one user
-exists, `POST /auth/register` refuses further registrations (409).
+Once a user exists, registration is closed: `/register` redirects to `/login`
+and `POST /auth/register` refuses further registrations (409).
 
 > **Deploying publicly?** Register *immediately* after bringing the service up.
-> Until a user exists the register endpoint is open to anyone who reaches your URL.
+> Until a user exists, `/register` and `POST /auth/register` are open to anyone
+> who reaches your URL.
 
 ## Docker
 
@@ -177,6 +182,7 @@ Key knobs:
 | `STORAGE_DIR`                     | `./data/storage`              | Where uploaded bytes live.                    |
 | `STORAGE_LIMIT`                   | *(all disk)*                  | Total quota in bytes.                         |
 | `MAX_UPLOAD_SIZE`                 | 5 GiB                         | Per-file cap.                                 |
+| `PENDING_UPLOADS_DIR`             | `./data/uploads`              | Parts of in-progress chunked uploads.         |
 | `DATABASE_URL`                    | `sqlite:///./data/shareit.db` | SQLAlchemy URL.                               |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`     | 15                            | Access token lifetime.                        |
 | `REFRESH_TOKEN_EXPIRE_DAYS`       | 7                             | Refresh token lifetime.                       |
@@ -200,7 +206,7 @@ python inspect_db.py
 - **Resumable uploads survive mid-session network drops only** — not a full
   page refresh or browser restart (the browser can't re-read a file without
   re-picking it).
-- **Clipboard "Share from this device"** uses `navigator.clipboard.readText()`,
+- **Clipboard "Share"** uses `navigator.clipboard.readText()`,
   which Firefox and iOS Safari do not support. Falls back softly.
 - **Single-user.** Multi-user support is a planned evolution (see Roadmap).
 
